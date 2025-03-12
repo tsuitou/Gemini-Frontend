@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLMチャットアプリ</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.1/socket.io.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.1/markdown-it.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.4/katex.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.4/contrib/auto-render.min.js"></script>
+	<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark-reasonable.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.4/katex.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+  <link rel="stylesheet" href="(( url_for('static', filename='style.css') ))">
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- ログイン/登録画面 -->
+    <div v-if="!isLoggedIn" class="auth-container">
+      <div class="auth-card">
+        <div class="auth-tabs">
+          <button 
+            :class="['auth-tab', { 'active': authMode === 'login' }]" 
+            @click="authMode = 'login'"
+          >ログイン</button>
+          <button 
+            :class="['auth-tab', { 'active': authMode === 'register' }]" 
+            @click="authMode = 'register'"
+          >新規登録</button>
+        </div>
+        
+        <div class="auth-form">
+          <div class="auth-error" v-if="authError">{{ authError }}</div>
+          
+          <div class="form-group">
+            <label for="username">ユーザー名</label>
+            <input 
+              type="text" 
+              id="username" 
+              v-model="username" 
+              placeholder="英数字のみ"
+              @keyup.enter="submitAuth"
+            >
+          </div>
+          
+          <div class="form-group">
+            <label for="password">パスワード</label>
+            <input 
+              type="password" 
+              id="password" 
+              v-model="password" 
+              placeholder="英数字のみ"
+              @keyup.enter="submitAuth"
+            >
+          </div>
+          
+          <button class="auth-button" @click="submitAuth">
+            {{ authMode === 'login' ? 'ログイン' : '登録' }}
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- メインアプリ -->
+    <template v-else>
+      <!-- サイドバー -->
+      <div class="sidebar">
+        <div class="sidebar-section model-section">
+          <div class="sidebar-section-title">モデル選択</div>
+          <select v-model="selectedModel" class="model-selector">
+            <option v-for="model in models" :key="model" :value="model">{{ model }}</option>
+          </select>
+          <button class="new-chat-btn" @click="createNewChat">
+            <i class="fas fa-plus"></i> 新規チャット
+          </button>
+        </div>
+        
+        <div class="sidebar-section search-section">
+          <div class="search-box">
+            <i class="fas fa-search search-icon"></i>
+            <input 
+              type="text" 
+              v-model="searchQuery" 
+              placeholder="チャット履歴を検索..."
+              class="search-input"
+            >
+            <i 
+              v-if="searchQuery" 
+              class="fas fa-times search-clear" 
+              @click="searchQuery = ''"
+            ></i>
+          </div>
+        </div>
+        
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <span>ブックマーク</span>
+          </div>
+          <div 
+            v-for="chat in bookmarkedChats" 
+            :key="chat.id" 
+            class="sidebar-item" 
+            :class="{ active: currentChatId === chat.id }"
+            @click="loadChat(chat.id)"
+          >
+            <i class="fas fa-bookmark bookmark-icon"></i>
+            <span class="chat-title-text">{{ chat.title }}</span>
+          </div>
+          <div class="empty-list-message" v-if="bookmarkedChats.length === 0">
+            ブックマークされたチャットはありません
+          </div>
+        </div>
+        
+        <div class="sidebar-section history-section">
+          <div class="sidebar-section-title">履歴</div>
+          <div 
+            v-for="chat in filteredHistory" 
+            :key="chat.id" 
+            class="sidebar-item" 
+            :class="{ active: currentChatId === chat.id }"
+            @click="loadChat(chat.id)"
+          >
+            <i class="fas fa-message"></i>
+            <span class="chat-title-text">{{ chat.title }}</span>
+            <div class="sidebar-item-actions">
+              <button class="sidebar-action-btn" @click.stop="toggleBookmark(chat.id)">
+                <i :class="chat.bookmarked ? 'fas fa-bookmark' : 'far fa-bookmark'" :style="chat.bookmarked ? 'color: #eab308;' : ''"></i>
+              </button>
+              <button class="sidebar-action-btn" @click.stop="confirmDeleteChat(chat.id)">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+          <div class="empty-list-message" v-if="filteredHistory.length === 0 && !searchQuery">
+            チャット履歴はありません
+          </div>
+          <div class="empty-list-message" v-if="filteredHistory.length === 0 && searchQuery">
+            検索結果はありません
+          </div>
+        </div>
+        
+        <div class="sidebar-footer">
+          <button class="logout-btn" @click="logout">
+            <i class="fas fa-sign-out-alt"></i> ログアウト
+          </button>
+        </div>
+      </div>
+      
+      <!-- メインチャット画面 -->
+      <div class="main-container">
+        <!-- チャットエリア -->
+        <div class="chat-container">
+          <div class="chat-header">
+            <div class="chat-title" @click="openEditTitleModal" v-if="currentChat && chatHistory[currentChatId]">
+              <span>{{ currentChat.title }}</span>
+              <i class="fas fa-edit"></i>
+            </div>
+            <div class="chat-actions" v-if="currentChat && chatHistory[currentChatId]">
+              <button 
+                class="chat-action-btn bookmark-btn" 
+                @click="toggleBookmark(currentChatId)"
+              >
+                <i 
+                  :class="isCurrentChatBookmarked ? 'fas fa-bookmark' : 'far fa-bookmark'"
+                  :style="isCurrentChatBookmarked ? 'color: #eab308;' : ''"
+                ></i>
+              </button>
+            </div>
+          </div>
+          
+          <div class="messages-container" ref="messagesContainer">
+            <div v-if="!currentChat || !currentChat.messages || currentChat.messages.length === 0" class="empty-chat">
+              <div class="empty-chat-content">
+                <i class="fas fa-comments"></i>
+                <h3>新しいチャットを始めましょう</h3>
+                <p>下のメッセージ入力欄からチャットを開始できます</p>
+              </div>
+            </div>
+            
+            <template v-else>
+              <div 
+                v-for="(message, index) in currentChat.messages" 
+                :key="index"
+                class="message" 
+                :class="message.role"
+              >
+                <div class="message-header">
+                  <div class="message-avatar" :class="message.role">
+                    <i :class="message.role === 'user' ? 'fas fa-user' : 'fas fa-robot'"></i>
+                  </div>
+                  <div class="message-info">
+                    <div class="message-role">{{ message.role === 'user' ? 'User' : 'Model' }}</div>
+                  </div>
+                  <div class="message-actions" v-if="editingMessageId !== index">
+										<button 
+											class="message-action-btn"
+											@click="copyMessageContent(message.content)"
+											title="メッセージをコピー"
+										>
+											<i class="fas fa-copy"></i>
+										</button>
+                    <button 
+                      v-if="message.role === 'user'" 
+                      class="message-action-btn"
+                      @click="startEditMessage(index, message)"
+                      title="メッセージを編集"
+                    >
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button 
+                      v-if="message.role === 'user'" 
+                      class="message-action-btn"
+                      @click="resendMessage(index)"
+                      title="応答を再生成"
+                    >
+                      <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button 
+                      class="message-action-btn"
+                      @click="deleteMessage(index)"
+                      title="このメッセージ以降を削除"
+                    >
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                  <div class="message-edit-actions" v-else-if="editingMessageId === index">
+                    <button 
+                      class="message-action-btn save-btn"
+                      @click="saveEditMessage(index)"
+                      title="編集を保存"
+                    >
+                      <i class="fas fa-check"></i>
+                    </button>
+                    <button 
+                      class="message-action-btn cancel-btn"
+                      @click="cancelEditMessage"
+                      title="編集をキャンセル"
+                    >
+                      <i class="fas fa-times"></i>
+                    </button>
+                  </div>
+                </div>
+                
+                <div class="message-attachments" v-if="message.attachments && message.attachments.length > 0">
+                  <div 
+                    v-for="(attachment, attachIndex) in message.attachments" 
+                    :key="attachIndex"
+                    class="message-attachment"
+                  >
+                    <i class="fas" :class="getFileIcon(attachment.type)"></i>
+                    <span>{{ attachment.name }}</span>
+                  </div>
+                </div>
+                
+                <!-- 編集モードと通常表示の切り替え -->
+								<div v-if="editingMessageId !== index">
+									<!-- ユーザーメッセージの場合 -->
+									<div 
+										v-if="message.role === 'user'"
+										class="message-content"
+										@click="handleMessageContentClick"
+									>{{ message.content }}</div>
+									<!-- モデルメッセージの場合 -->
+									<div 
+										v-else
+										class="message-content" 
+										v-html="renderMarkdown(message.content)"
+										@click="handleMessageContentClick"
+									></div>
+								</div>
+								<div v-else class="message-content-edit">
+									<textarea 
+										:id="'edit-message-' + index"
+										ref="editMessageTextarea"
+										v-model="editingMessageText"
+										class="message-edit-textarea"
+										placeholder="メッセージを入力..."
+										@input="adjustEditTextarea"
+										@keydown.esc="cancelEditMessage"
+										@keydown.tab.prevent="handleEditTab($event)"
+										@keydown.shift.tab.prevent="handleEditShiftTab($event)"
+									></textarea>
+								</div>
+              </div>
+            </template>
+            
+            <!-- 生成中の表示 -->
+            <div class="generating-indicator" v-if="isGenerating">
+              <div class="generating-dots">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+              </div>
+              <span>生成中...</span>
+            </div>
+          </div>
+          
+          <!-- メッセージ入力エリア -->
+          <div class="input-area">
+            <div class="attachments-preview" v-if="attachments.length > 0">
+              <div 
+                v-for="(file, idx) in attachments" 
+                :key="idx"
+                class="attachment-item"
+              >
+                <i class="fas" :class="getFileIcon(file.type)"></i>
+                <span class="attachment-name">{{ file.name }}</span>
+                <button class="remove-attachment-btn" @click="removeAttachment(idx)">
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+            </div>
+            
+            <div class="input-container">
+              <textarea 
+                ref="messageInput"
+                v-model="messageText" 
+                class="message-input" 
+                placeholder="メッセージを入力..."
+                @input="resizeTextarea"
+                @keydown.tab.prevent="handleTab"
+                @keydown.shift.tab.prevent="handleShiftTab"
+                @keydown.ctrl.enter="sendMessage"
+              ></textarea>
+              
+              <div class="input-buttons">
+                <button class="input-button" @click="openFileInput" title="ファイルを添付">
+                  <i class="fas fa-paperclip"></i>
+                </button>
+                <button 
+                  class="input-button" 
+                  :class="{ 'active': codeExecutionEnabled }"
+                  @click="toggleCodeExecution" 
+                  title="コード実行機能を有効化"
+                >
+                  <i class="fas fa-code"></i>
+                </button>
+                <button 
+                  class="input-button" 
+                  :class="{ 'active': groundingEnabled }"
+                  @click="toggleGroundingEnabled" 
+                  title="検索機能を有効化"
+                >
+                  <i class="fas fa-search"></i>
+                </button>
+                <button 
+                  class="send-button" 
+                  v-if="!isGenerating"
+                  @click="sendMessage" 
+                  :disabled="!canSendMessage"
+                  title="送信 (Ctrl+Enter)"
+                >
+                  <i class="fas fa-paper-plane"></i>
+                </button>
+                <button 
+                  class="stop-button" 
+                  v-else
+                  @click="cancelGeneration" 
+                  title="生成を停止"
+                >
+                  <i class="fas fa-stop"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- ファイル入力（非表示） -->
+          <input 
+            type="file" 
+            ref="fileInput" 
+            style="display: none" 
+            @change="handleFileUpload" 
+            multiple
+          >
+        </div>
+      </div>
+    </template>
+    
+    <!-- モーダル: チャットタイトル編集 -->
+    <div class="modal" v-if="showEditTitleModal">
+      <div class="modal-overlay" @click="showEditTitleModal = false"></div>
+      <div class="modal-container">
+        <div class="modal-header">
+          <h3>チャットタイトルの編集</h3>
+          <button class="modal-close-btn" @click="showEditTitleModal = false">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <input 
+            type="text" 
+            v-model="editTitleText" 
+            class="modal-input"
+            placeholder="チャットタイトルを入力..."
+            @keyup.enter="saveEditedTitle"
+          >
+        </div>
+        <div class="modal-footer">
+          <button class="modal-cancel-btn" @click="showEditTitleModal = false">キャンセル</button>
+          <button class="modal-save-btn" @click="saveEditedTitle">保存</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- モーダル: 削除確認 -->
+    <div class="modal" v-if="showDeleteConfirmModal">
+      <div class="modal-overlay" @click="showDeleteConfirmModal = false"></div>
+      <div class="modal-container">
+        <div class="modal-header">
+          <h3>チャットの削除</h3>
+          <button class="modal-close-btn" @click="showDeleteConfirmModal = false">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p>このチャットを削除してもよろしいですか？</p>
+          <p class="modal-warning">この操作は元に戻せません。</p>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-cancel-btn" @click="showDeleteConfirmModal = false">キャンセル</button>
+          <button class="modal-delete-btn" @click="deleteChat">削除</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- トースト通知 -->
+    <div class="toast" :class="{ 'show': showToast }" @click="closeToast">
+      <div class="toast-content">
+        <span>{{ toastMessage }}</span>
+      </div>
+      <div class="toast-close">
+        <i class="fas fa-times"></i>
+      </div>
+    </div>
+  </div>
+  
+  <script src="(( url_for('static', filename='script.js') ))"></script>
+</body>
+</html>
