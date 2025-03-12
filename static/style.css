@@ -587,6 +587,7 @@ a:hover {
   border-radius: 12px;
   box-shadow: var(--shadow);
   overflow-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 .message.user .message-content {
