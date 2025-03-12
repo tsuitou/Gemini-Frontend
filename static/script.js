@@ -1167,8 +1167,8 @@ createApp({
     });
     
     socket.on('stream_cancelled', (data) => {
-      if (data.chat_id !== currentChatId.value) return;
       isGenerating.value = false;
+      if (data.chat_id !== currentChatId.value) return;
       // チャット履歴を更新するために履歴一覧を再取得
       loadChat(data.chat_id);
     });
