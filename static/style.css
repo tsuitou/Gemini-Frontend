@@ -13,7 +13,7 @@
   --border-color: #e5e7eb;
   --user-message-bg: #f0f9ff;
   --bot-message-bg: #ffffff;
-  --code-bg: #f8fafc;
+  --code-bg: #f5f5f5;
   --sidebar-width: 280px;
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
@@ -587,11 +587,11 @@ a:hover {
   border-radius: 12px;
   box-shadow: var(--shadow);
   overflow-wrap: break-word;
-  white-space: pre-wrap;
 }
 
 .message.user .message-content {
   background-color: var(--user-message-bg);
+  white-space: pre-wrap;
 }
 
 .message.model .message-content {
