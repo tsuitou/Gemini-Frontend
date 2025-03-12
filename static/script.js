@@ -399,17 +399,15 @@ createApp({
       if (!currentChat.value.messages) {
         currentChat.value.messages = [];
       }
-      
       // UIにユーザーメッセージを追加
       currentChat.value.messages.push(userMessage);
       
       // 入力欄と添付ファイルをクリア
       messageText.value = '';
       attachments.value = [];
-      resizeTextarea();
-      
       // スクロールして最新メッセージを表示
       nextTick(() => {
+				resizeTextarea();
         scrollToBottom();
       });
       
@@ -1057,7 +1055,7 @@ createApp({
     // チャット操作
     socket.on('chat_created', (data) => {
       currentChatId.value = data.chat_id;
-      
+      isGenerating.value = false;
       // 現在のチャットを設定（履歴には追加しない）
       currentChat.value = {
         id: data.chat_id,
@@ -1072,7 +1070,7 @@ createApp({
         title: chatHistory.value[data.chat_id]?.title || '読み込み中...',
         messages: data.messages
       };
-      
+      isGenerating.value = false;
       nextTick(() => {
         scrollToBottom();
       });
