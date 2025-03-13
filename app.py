@@ -831,11 +831,10 @@ def handle_edit_message(data):
     gemini_index = find_gemini_user_index(gemini_history, user_message_count)
     
     if gemini_index is not None:
-        # gemini_historyのテキスト更新
-        if gemini_history[gemini_index].parts[0].text is not None:
-            gemini_history[gemini_index].parts[0].text = new_text
-        else:
-            gemini_history[gemini_index].parts[1].text = new_text
+        for part in gemini_history[gemini_index].parts:
+            if part.text is not None:
+                part.text = new_text
+                break  # 最初に見つかった要素を更新したらループを抜ける
         
         # 変更を保存
         save_chat_messages(user_dir, chat_id, messages)

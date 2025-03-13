@@ -710,6 +710,54 @@ a:hover {
   overflow: hidden;
 }
 
+/* ドラッグアンドドロップのスタイル */
+.input-container.drag-over {
+  border: 2px dashed var(--primary-color);
+  background-color: var(--primary-light);
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
+}
+
+.drop-indicator {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(79, 70, 229, 0.1);
+  border-radius: 12px;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.drop-indicator-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+}
+
+.drop-indicator-icon {
+  font-size: 24px;
+  color: var(--primary-color);
+  margin-bottom: 8px;
+}
+
+.drop-indicator-text {
+  font-weight: 500;
+  color: var(--primary-color);
+}
+
+.input-container.drag-over .drop-indicator {
+  display: flex;
+}
+
 .message-input {
   flex: 1;
   padding: 12px 16px;

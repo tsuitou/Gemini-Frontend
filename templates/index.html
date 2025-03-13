@@ -314,57 +314,72 @@
               </div>
             </div>
             
-            <div class="input-container">
-              <textarea 
-                ref="messageInput"
-                v-model="messageText" 
-                class="message-input" 
-                placeholder="メッセージを入力..."
-                @input="resizeTextarea"
-                @keydown.tab.prevent="handleTab"
-                @keydown.shift.tab.prevent="handleShiftTab"
-                @keydown.ctrl.enter="sendMessage"
-              ></textarea>
-              
-              <div class="input-buttons">
-                <button class="input-button" @click="openFileInput" title="ファイルを添付">
-                  <i class="fas fa-paperclip"></i>
-                </button>
-                <button 
-                  class="input-button" 
-                  :class="{ 'active': codeExecutionEnabled }"
-                  @click="toggleCodeExecution" 
-                  title="コード実行機能を有効化"
-                >
-                  <i class="fas fa-code"></i>
-                </button>
-                <button 
-                  class="input-button" 
-                  :class="{ 'active': groundingEnabled }"
-                  @click="toggleGroundingEnabled" 
-                  title="検索機能を有効化"
-                >
-                  <i class="fas fa-search"></i>
-                </button>
-                <button 
-                  class="send-button" 
-                  v-if="!isGenerating"
-                  @click="sendMessage" 
-                  :disabled="!canSendMessage"
-                  title="送信 (Ctrl+Enter)"
-                >
-                  <i class="fas fa-paper-plane"></i>
-                </button>
-                <button 
-                  class="stop-button" 
-                  v-else
-                  @click="cancelGeneration" 
-                  title="生成を停止"
-                >
-                  <i class="fas fa-stop"></i>
-                </button>
-              </div>
-            </div>
+						<div 
+							class="input-container" 
+							:class="{ 'drag-over': isDraggingOver }"
+							@dragover.prevent="handleDragOver"
+							@dragleave="handleDragLeave"
+							@dragenter.prevent="handleDragEnter"
+							@drop="handleDrop"
+						>
+							<!-- ドロップ中の表示 -->
+							<div class="drop-indicator">
+								<div class="drop-indicator-content">
+									<i class="fas fa-file-import drop-indicator-icon"></i>
+									<span class="drop-indicator-text">ファイルをドロップ</span>
+								</div>
+							</div>
+
+							<textarea 
+								ref="messageInput"
+								v-model="messageText" 
+								class="message-input" 
+								placeholder="メッセージを入力..."
+								@input="resizeTextarea"
+								@keydown.tab.prevent="handleTab"
+								@keydown.shift.tab.prevent="handleShiftTab"
+								@keydown.ctrl.enter="sendMessage"
+							></textarea>
+							
+							<div class="input-buttons">
+								<button class="input-button" @click="openFileInput" title="ファイルを添付">
+									<i class="fas fa-paperclip"></i>
+								</button>
+								<button 
+									class="input-button" 
+									:class="{ 'active': codeExecutionEnabled }"
+									@click="toggleCodeExecution" 
+									title="コード実行機能を有効化"
+								>
+									<i class="fas fa-code"></i>
+								</button>
+								<button 
+									class="input-button" 
+									:class="{ 'active': groundingEnabled }"
+									@click="toggleGroundingEnabled" 
+									title="検索機能を有効化"
+								>
+									<i class="fas fa-search"></i>
+								</button>
+								<button 
+									class="send-button" 
+									v-if="!isGenerating"
+									@click="sendMessage" 
+									:disabled="!canSendMessage"
+									title="送信 (Ctrl+Enter)"
+								>
+									<i class="fas fa-paper-plane"></i>
+								</button>
+								<button 
+									class="stop-button" 
+									v-else
+									@click="cancelGeneration" 
+									title="生成を停止"
+								>
+									<i class="fas fa-stop"></i>
+								</button>
+							</div>
+						</div>
           </div>
           
           <!-- ファイル入力（非表示） -->
