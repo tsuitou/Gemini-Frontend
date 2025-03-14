@@ -595,8 +595,14 @@ def handle_resend_message(data):
         # エラー時は一時メッセージを削除して詳細なエラー情報を送信
         if len(messages) > 0 and messages[-1]["role"] == "model":
             messages.pop()
+            chat.record_history(
+                user_input=input_content,
+                model_output=[],
+                automatic_function_calling_history=[],
+                is_valid=False 
+            )
             save_chat_messages(user_dir, chat_id, messages)
-        
+            save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
         emit("gemini_response_error", {"error": str(e), "chat_id": chat_id})
     finally:
         # 応答処理終了後にキャンセルフラグを削除
@@ -791,8 +797,14 @@ def handle_message(data):
         # エラー時は一時メッセージを削除して詳細なエラー情報を送信
         if len(messages) > 0 and messages[-1]["role"] == "model":
             messages.pop()
+            chat.record_history(
+                user_input=input_content,
+                model_output=[],
+                automatic_function_calling_history=[],
+                is_valid=False 
+            )
             save_chat_messages(user_dir, chat_id, messages)
-        
+            save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
         emit("gemini_response_error", {"error": str(e), "chat_id": chat_id})
     finally:
         # 応答処理終了後にキャンセルフラグを削除
