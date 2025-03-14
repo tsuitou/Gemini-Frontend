@@ -509,7 +509,7 @@ def handle_resend_message(data):
                     is_valid=False 
                 )
                 save_chat_messages(user_dir, chat_id, messages)
-                save_gemini_history(user_dir, chat_id, chat._comprehensive_history)
+                save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
                 emit("stream_cancelled", {"chat_id": chat_id})
                 return
 
@@ -575,7 +575,7 @@ def handle_resend_message(data):
 
         # Gemini履歴を保存
         save_chat_messages(user_dir, chat_id, messages)
-        save_gemini_history(user_dir, chat_id, chat._curated_history)
+        save_gemini_history(user_dir, chat_id, chat.get_history(curated=True))
         emit("gemini_response_complete", {"chat_id": chat_id})
         # 再送信完了通知
         emit("message_resent", {"index": message_index})
@@ -707,7 +707,7 @@ def handle_message(data):
                     is_valid=False 
                 )
                 save_chat_messages(user_dir, chat_id, messages)
-                save_gemini_history(user_dir, chat_id, chat._comprehensive_history)
+                save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
                 emit("stream_cancelled", {"chat_id": chat_id})
                 return
 
@@ -773,7 +773,7 @@ def handle_message(data):
 
         # Gemini履歴を保存
         save_chat_messages(user_dir, chat_id, messages)
-        save_gemini_history(user_dir, chat_id, chat._curated_history)
+        save_gemini_history(user_dir, chat_id, chat.get_history(curated=True))
         emit("gemini_response_complete", {"chat_id": chat_id})
 
     except Exception as e:
