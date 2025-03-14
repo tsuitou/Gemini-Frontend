@@ -295,7 +295,7 @@ createApp({
     // メッセージの送信
 		const sendMessage = async () => {
 			if (!canSendMessage.value) return;
-			
+			isGenerating.value = true;
 			// 新規チャットの場合
 			if (!currentChatId.value) {
 				await createNewChat();
@@ -437,7 +437,6 @@ createApp({
 			});
 			
 			// 送信とレスポンス受信開始
-			isGenerating.value = true;
 			socket.emit('send_message', messageData);
 		};
     
