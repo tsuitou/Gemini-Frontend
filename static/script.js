@@ -293,129 +293,153 @@ createApp({
 		}
 
     // メッセージの送信
-    const sendMessage = async () => {
-      if (!canSendMessage.value) return;
-      
-      // 新規チャットの場合
-      if (!currentChatId.value) {
-        await createNewChat();
-        // 新しいチャットIDが設定されるのを待つ
-        await new Promise(resolve => {
-          const checkInterval = setInterval(() => {
-            if (currentChatId.value) {
-              clearInterval(checkInterval);
-              resolve();
-            }
-          }, 100);
-        });
-      }
-      
-      // 送信データの準備
-      const messageData = {
-        token: token.value,
-        chat_id: currentChatId.value,
-        message: messageText.value,
-        model_name: selectedModel.value,
-        grounding_enabled: groundingEnabled.value,
-        code_execution_enabled: codeExecutionEnabled.value
-      };
-      
-      // 一時的にUIに表示するためのメッセージオブジェクト
-      const userMessage = {
-        role: 'user',
-        content: messageText.value,
-        timestamp: Date.now() / 1000
-      };
-      
+		const sendMessage = async () => {
+			if (!canSendMessage.value) return;
+			
+			// 新規チャットの場合
+			if (!currentChatId.value) {
+				await createNewChat();
+				// 新しいチャットIDが設定されるのを待つ
+				await new Promise(resolve => {
+					const checkInterval = setInterval(() => {
+						if (currentChatId.value) {
+							clearInterval(checkInterval);
+							resolve();
+						}
+					}, 100);
+				});
+			}
+			
+			// 送信データの準備
+			const messageData = {
+				token: token.value,
+				chat_id: currentChatId.value,
+				message: messageText.value,
+				model_name: selectedModel.value,
+				grounding_enabled: groundingEnabled.value,
+				code_execution_enabled: codeExecutionEnabled.value,
+				files: [] // 複数ファイル情報を格納する配列
+			};
+			
+			// 一時的にUIに表示するためのメッセージオブジェクト
+			const userMessage = {
+				role: 'user',
+				content: messageText.value,
+				timestamp: Date.now() / 1000,
+				attachments: [] // 複数の添付ファイル情報
+			};
+			
 			// 添付ファイルがある場合の処理
 			if (attachments.value.length > 0) {
-				// 1つ目のファイルを処理
-				const file = attachments.value[0];
+				const filesUpload = [];
+				let isLargeFile = false;
 				
-				// ファイルサイズが大きい場合（10MB以上）かつメディアファイル
-				if (file.size >= FILE_SIZE_THRESHOLD && MEDIA_EXTENSIONS.test(file.name)) {
-					showToastMessage('大きなファイルをアップロード中...');
+				// すべてのファイルを処理
+				for (let i = 0; i < attachments.value.length; i++) {
+					const file = attachments.value[i];
 					
-					// FormDataの作成
-					const formData = new FormData();
-					formData.append('file', file.file);
-					formData.append('token', token.value);
-					
-					try {
-						const response = await fetch('/upload_large_file', {
-							method: 'POST',
-							body: formData
+					// ファイルサイズが大きい場合（10MB以上）かつメディアファイル
+					if (file.size >= FILE_SIZE_THRESHOLD && MEDIA_EXTENSIONS.test(file.name)) {
+						 isLargeFile = true;
+						// 大きなファイルは非同期アップロードリクエストを準備
+						const formData = new FormData();
+						formData.append('file', file.file);
+						formData.append('token', token.value);
+						
+						// アップロードリクエストをPromiseとして配列に追加
+						filesUpload.push(
+							fetch('/upload_large_file', {
+								method: 'POST',
+								body: formData
+							}).then(response => response.json())
+						);
+					} else {
+						// 通常サイズのファイル、またはExcel変換済みファイルの処理
+						const filePromise = new Promise((resolve, reject) => {
+							const reader = new FileReader();
+							
+							reader.onload = () => {
+								const base64data = reader.result.split(',')[1];
+								
+								// messageDataのfiles配列に追加
+								messageData.files.push({
+									file_data: base64data,
+									file_name: file.name,
+									file_mime_type: file.type,
+									original_file_name: file.originalName || null
+								});
+								
+								// UIメッセージの添付ファイル情報も追加
+								userMessage.attachments.push({
+									name: file.name,
+									type: file.type
+								});
+								
+								resolve();
+							};
+							reader.onerror = reject;
+							reader.readAsDataURL(file.file);
 						});
 						
-						const result = await response.json();
+						filesUpload.push(filePromise);
+					}
+				}
+				
+				// すべてのファイルアップロード処理を待つ
+				if (filesUpload.length > 0) {
+					if (isLargeFile) showToastMessage('ファイルをアップロード中...');
+					
+					try {
+						const results = await Promise.all(filesUpload);
 						
-						if (result.status === 'success') {
-							messageData.file_id = result.file_id;
-							messageData.file_name = result.file_name;
-							messageData.file_mime_type = result.file_mime_type;
-							
-							userMessage.attachments = [{
-								name: result.file_name,
-								type: result.file_mime_type,
-								file_id: result.file_id
-							}];
-						} else {
-							showToastMessage('ファイルアップロードエラー: ' + result.message);
-							return;
+						// ファイルアップロード結果の処理
+						for (const result of results) {
+							// JSON応答のみを処理（base64データの場合はすでに処理済み）
+							if (result && result.status === 'success') {
+								// messageDataのfiles配列に追加
+								messageData.files.push({
+									file_id: result.file_id,
+									file_name: result.file_name,
+									file_mime_type: result.file_mime_type
+								});
+								
+								// UIメッセージの添付ファイル情報も追加
+								userMessage.attachments.push({
+									name: result.file_name,
+									type: result.file_mime_type,
+									file_id: result.file_id
+								});
+							} else if (result && result.status === 'error') {
+								showToastMessage('ファイルアップロードエラー: ' + result.message);
+							}
 						}
 					} catch (error) {
 						showToastMessage('ファイルアップロードエラー: ' + error.message);
 						return;
 					}
-				} else {
-					// 通常サイズのファイル、またはExcel変換済みファイルの処理
-					const reader = new FileReader();
-					
-					await new Promise((resolve, reject) => {
-						reader.onload = () => {
-							const base64data = reader.result.split(',')[1];
-							messageData.file_data = base64data;
-							messageData.file_name = file.name;
-							messageData.file_mime_type = file.type;
-							
-							// 元のExcelファイル名がある場合は追加情報として送信
-							if (file.originalName) {
-								messageData.original_file_name = file.originalName;
-							}
-							
-							userMessage.attachments = [{
-								name: file.name,
-								type: file.type
-							}];
-							
-							resolve();
-						};
-						reader.onerror = reject;
-						reader.readAsDataURL(file.file);
-					});
 				}
 			}
-      
-      // UIの更新
-      if (!currentChat.value.messages) {
-        currentChat.value.messages = [];
-      }
-      // UIにユーザーメッセージを追加
-      currentChat.value.messages.push(userMessage);
-      
-      // 入力欄と添付ファイルをクリア
-      messageText.value = '';
-      attachments.value = [];
-      // スクロールして最新メッセージを表示
-      nextTick(() => {
+			
+			// UIの更新
+			if (!currentChat.value.messages) {
+				currentChat.value.messages = [];
+			}
+			// UIにユーザーメッセージを追加
+			currentChat.value.messages.push(userMessage);
+			
+			// 入力欄と添付ファイルをクリア
+			messageText.value = '';
+			attachments.value = [];
+			// スクロールして最新メッセージを表示
+			nextTick(() => {
 				resizeTextarea();
-        scrollToBottom();
-      });
-      
-      // 送信とレスポンス受信開始
-      isGenerating.value = true;
-      socket.emit('send_message', messageData);
-    };
+				scrollToBottom();
+			});
+			
+			// 送信とレスポンス受信開始
+			isGenerating.value = true;
+			socket.emit('send_message', messageData);
+		};
     
     // メッセージの編集モードを開始
     const startEditMessage = (index, message) => {
@@ -876,84 +900,77 @@ createApp({
 			const files = event.target.files;
 			if (!files || files.length === 0) return;
 			
-			// 既に添付ファイルがある場合
-			if (attachments.value.length > 0) {
-				showToastMessage('添付可能なファイルは1つです');
-				event.target.value = ''; // ファイル入力欄をリセット
-				return;
-			}
-			
-			// 最初のファイルだけを処理
-			const file = files[0];
-			
-			// 拡張子チェック
-			if (!ALLOWED_EXTENSIONS.test(file.name)) {
-				showToastMessage('非対応の拡張子です');
-				event.target.value = ''; // ファイル入力欄をリセット
-				return;
-			}
-			
-			// ファイルサイズチェック
-			if (file.size > FILE_SIZE_THRESHOLD) {
-				// 動画・音声ファイルの場合は許可
-				if (MEDIA_EXTENSIONS.test(file.name)) {
-					// ファイル情報の追加
+			// 複数ファイルの追加処理
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				
+				// 拡張子チェック
+				if (!ALLOWED_EXTENSIONS.test(file.name)) {
+					showToastMessage(`非対応の拡張子です: ${file.name}`);
+					continue;
+				}
+				
+				// ファイルサイズチェック
+				if (file.size > FILE_SIZE_THRESHOLD) {
+					// 動画・音声ファイルの場合は許可
+					if (MEDIA_EXTENSIONS.test(file.name)) {
+						// ファイル情報の追加
+						attachments.value.push({
+							name: file.name,
+							type: file.type || getMimeTypeFromFilename(file.name),
+							size: file.size,
+							file: file
+						});
+					} else {
+						showToastMessage(`動画・音声以外のファイルサイズ上限は10MBです: ${file.name}`);
+						continue;
+					}
+				} else if (EXCEL_EXTENSIONS.test(file.name)) {
+					// Excelファイルの変換処理
+					const reader = new FileReader();
+					reader.onload = (e) => {
+						const data = new Uint8Array(e.target.result);
+						// SheetJSでWorkbookを読み込む
+						const workbook = XLSX.read(data, { type: "array" });
+						// テキスト出力用の変数
+						let textOutput = "";
+						// 全てのシートをループしてCSV文字列に変換
+						workbook.SheetNames.forEach((sheetName) => {
+							const worksheet = workbook.Sheets[sheetName];
+							// CSV形式で取得
+							const csv = XLSX.utils.sheet_to_csv(worksheet);
+							// シート名を含める
+							textOutput += `=== Sheet: ${sheetName} ===\n${csv}\n\n`;
+						});
+						
+						// 変換したテキストデータでBlobを作成
+						const blob = new Blob([textOutput], { type: "text/plain" });
+						const convertedFile = new File([blob], file.name.replace(/\.(xlsx|xlsm)$/i, ".txt"), {
+							type: "text/plain"
+						});
+						
+						// 変換したファイル情報を追加
+						attachments.value.push({
+							name: convertedFile.name,
+							type: convertedFile.type,
+							size: convertedFile.size,
+							file: convertedFile,
+							originalName: file.name
+						});
+					};
+					reader.onerror = () => {
+						showToastMessage(`Excelファイルの変換に失敗しました: ${file.name}`);
+					};
+					reader.readAsArrayBuffer(file);
+				} else {
+					// 通常のファイル処理
 					attachments.value.push({
 						name: file.name,
 						type: file.type || getMimeTypeFromFilename(file.name),
 						size: file.size,
 						file: file
 					});
-				} else {
-					showToastMessage('動画・音声以外のファイルサイズ上限は10MBです');
-					event.target.value = ''; // ファイル入力欄をリセット
-					return;
 				}
-			} else if (EXCEL_EXTENSIONS.test(file.name)) {
-				// Excelファイルの変換処理
-				const reader = new FileReader();
-				reader.onload = (e) => {
-					const data = new Uint8Array(e.target.result);
-					// SheetJSでWorkbookを読み込む
-					const workbook = XLSX.read(data, { type: "array" });
-					// テキスト出力用の変数
-					let textOutput = "";
-					// 全てのシートをループしてCSV文字列に変換
-					workbook.SheetNames.forEach((sheetName) => {
-						const worksheet = workbook.Sheets[sheetName];
-						// CSV形式で取得
-						const csv = XLSX.utils.sheet_to_csv(worksheet);
-						// シート名を含める
-						textOutput += `=== Sheet: ${sheetName} ===\n${csv}\n\n`;
-					});
-					
-					// 変換したテキストデータでBlobを作成
-					const blob = new Blob([textOutput], { type: "text/plain" });
-					const convertedFile = new File([blob], file.name.replace(/\.(xlsx|xlsm)$/i, ".txt"), {
-						type: "text/plain"
-					});
-					
-					// 変換したファイル情報を追加
-					attachments.value.push({
-						name: convertedFile.name,
-						type: convertedFile.type,
-						size: convertedFile.size,
-						file: convertedFile,
-						originalName: file.name
-					});
-				};
-				reader.onerror = () => {
-					showToastMessage('Excelファイルの変換に失敗しました');
-				};
-				reader.readAsArrayBuffer(file);
-			} else {
-				// 通常のファイル処理
-				attachments.value.push({
-					name: file.name,
-					type: file.type || getMimeTypeFromFilename(file.name),
-					size: file.size,
-					file: file
-				});
 			}
 			
 			// 入力をリセット
@@ -1004,98 +1021,92 @@ createApp({
 			event.preventDefault();
 			isDraggingOver.value = true;
 		};
-
-		const handleDrop = (event) => {
-			event.preventDefault();
-			isDraggingOver.value = false;
-			
-			// ドロップされたファイルを取得
-			const droppedFiles = event.dataTransfer.files;
-			
-			// 既存のファイル処理ロジックを使用
-			if (!droppedFiles || droppedFiles.length === 0) return;
-			
-			// 既に添付ファイルがある場合
-			if (attachments.value.length > 0) {
-				showToastMessage('添付可能なファイルは1つです');
-				return;
-			}
-			
-			// 最初のファイルだけを処理
-			const file = droppedFiles[0];
-			
-			// 拡張子チェック
-			if (!ALLOWED_EXTENSIONS.test(file.name)) {
-				showToastMessage('非対応の拡張子です');
-				return;
-			}
-			
-			// ファイルサイズチェック
-			if (file.size > FILE_SIZE_THRESHOLD) {
-				// 動画・音声ファイルの場合は許可
-				if (MEDIA_EXTENSIONS.test(file.name)) {
-					// ファイル情報の追加
-					attachments.value.push({
-						name: file.name,
-						type: file.type || getMimeTypeFromFilename(file.name),
-						size: file.size,
-						file: file
-					});
-				} else {
-					showToastMessage('動画・音声以外のファイルサイズ上限は10MBです');
-					return;
-				}
-			} else if (EXCEL_EXTENSIONS.test(file.name)) {
-				// Excelファイルの変換処理
-				const reader = new FileReader();
-				reader.onload = (e) => {
-					const data = new Uint8Array(e.target.result);
-					// SheetJSでWorkbookを読み込む
-					const workbook = XLSX.read(data, { type: "array" });
-					// テキスト出力用の変数
-					let textOutput = "";
-					// 全てのシートをループしてCSV文字列に変換
-					workbook.SheetNames.forEach((sheetName) => {
-						const worksheet = workbook.Sheets[sheetName];
-						// CSV形式で取得
-						const csv = XLSX.utils.sheet_to_csv(worksheet);
-						// シート名を含める
-						textOutput += `=== Sheet: ${sheetName} ===\n${csv}\n\n`;
-					});
-					
-					// 変換したテキストデータでBlobを作成
-					const blob = new Blob([textOutput], { type: "text/plain" });
-					const convertedFile = new File([blob], file.name.replace(/\.(xlsx|xlsm)$/i, ".txt"), {
-						type: "text/plain"
-					});
-					
-					// 変換したファイル情報を追加
-					attachments.value.push({
-						name: convertedFile.name,
-						type: convertedFile.type,
-						size: convertedFile.size,
-						file: convertedFile,
-						originalName: file.name
-					});
-				};
-				reader.onerror = () => {
-					showToastMessage('Excelファイルの変換に失敗しました');
-				};
-				reader.readAsArrayBuffer(file);
-			} else {
-				// 通常のファイル処理
-				attachments.value.push({
-					name: file.name,
-					type: file.type || getMimeTypeFromFilename(file.name),
-					size: file.size,
-					file: file
-				});
-			}
-			
-			// 入力エリアにフォーカスを戻す
-			messageInput.value.focus();
-		};
 		
+const handleDrop = (event) => {
+  event.preventDefault();
+  isDraggingOver.value = false;
+  
+  // ドロップされたファイルを取得
+  const droppedFiles = event.dataTransfer.files;
+  
+  if (!droppedFiles || droppedFiles.length === 0) return;
+  
+  // 複数ファイルの追加処理
+  for (let i = 0; i < droppedFiles.length; i++) {
+    const file = droppedFiles[i];
+    
+    // 拡張子チェック
+    if (!ALLOWED_EXTENSIONS.test(file.name)) {
+      showToastMessage(`非対応の拡張子です: ${file.name}`);
+      continue;
+    }
+    
+    // ファイルサイズチェック
+    if (file.size > FILE_SIZE_THRESHOLD) {
+      // 動画・音声ファイルの場合は許可
+      if (MEDIA_EXTENSIONS.test(file.name)) {
+        // ファイル情報の追加
+        attachments.value.push({
+          name: file.name,
+          type: file.type || getMimeTypeFromFilename(file.name),
+          size: file.size,
+          file: file
+        });
+      } else {
+        showToastMessage(`動画・音声以外のファイルサイズ上限は10MBです: ${file.name}`);
+        continue;
+      }
+    } else if (EXCEL_EXTENSIONS.test(file.name)) {
+      // Excelファイルの変換処理
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const data = new Uint8Array(e.target.result);
+        // SheetJSでWorkbookを読み込む
+        const workbook = XLSX.read(data, { type: "array" });
+        // テキスト出力用の変数
+        let textOutput = "";
+        // 全てのシートをループしてCSV文字列に変換
+        workbook.SheetNames.forEach((sheetName) => {
+          const worksheet = workbook.Sheets[sheetName];
+          // CSV形式で取得
+          const csv = XLSX.utils.sheet_to_csv(worksheet);
+          // シート名を含める
+          textOutput += `=== Sheet: ${sheetName} ===\n${csv}\n\n`;
+        });
+        
+        // 変換したテキストデータでBlobを作成
+        const blob = new Blob([textOutput], { type: "text/plain" });
+        const convertedFile = new File([blob], file.name.replace(/\.(xlsx|xlsm)$/i, ".txt"), {
+          type: "text/plain"
+        });
+        
+        // 変換したファイル情報を追加
+        attachments.value.push({
+          name: convertedFile.name,
+          type: convertedFile.type,
+          size: convertedFile.size,
+          file: convertedFile,
+          originalName: file.name
+        });
+      };
+      reader.onerror = () => {
+        showToastMessage(`Excelファイルの変換に失敗しました: ${file.name}`);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      // 通常のファイル処理
+      attachments.value.push({
+        name: file.name,
+        type: file.type || getMimeTypeFromFilename(file.name),
+        size: file.size,
+        file: file
+      });
+    }
+  }
+  
+  // 入力エリアにフォーカスを戻す
+  messageInput.value.focus();
+};
     // =====================================
     // Socket.IO イベントハンドラ
     // =====================================

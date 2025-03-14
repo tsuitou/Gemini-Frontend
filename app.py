@@ -391,18 +391,16 @@ def upload_large_file():
             "file_mime_type": file.content_type
         })
     except Exception as api_error:
-        # API固有のエラーをより詳細にログ出力
+        # エラー処理（既存コードと同じ）
         if isinstance(api_error, Exception):
             print(f"Gemini File APIエラー: {str(api_error)}")
             print(f"エラータイプ: {type(api_error).__name__}")
             
-            # クライアントへのわかりやすいエラーメッセージ
             return jsonify({
                 "status": "error", 
                 "message": f"ファイルAPIエラー: {str(api_error)}"
             }), 500
         else:
-            # 一般的なエラー
             print(f"アップロード処理エラー: {str(api_error)}")
             return jsonify({"status": "error", "message": str(api_error)}), 500
     finally:
@@ -625,12 +623,8 @@ def handle_message(data):
     grounding_enabled = data.get("grounding_enabled", False)
     code_execution_enabled = data.get("code_execution_enabled", False)
     
-    # 既存のファイルデータ形式
-    file_data_base64 = data.get("file_data")
-    file_name = data.get("file_name")
-    file_mime_type = data.get("file_mime_type")
-    # 新しいファイルID形式
-    file_id = data.get("file_id")
+    # 複数ファイル情報を取得
+    files = data.get("files", [])
 
     user_dir = get_user_dir(username)
     messages = load_chat_messages(user_dir, chat_id)
@@ -654,30 +648,46 @@ def handle_message(data):
     }
     
     # 添付ファイル情報があれば追加
-    if file_name or file_id:
-        attachment_info = {
-            "name": file_name,
-            "type": file_mime_type,
-            "file_id": file_id
-        }
-        user_message["attachments"] = [attachment_info]
+    if files:
+        attachments = []
+        for file_info in files:
+            attachment = {
+                "name": file_info.get("file_name"),
+                "type": file_info.get("file_mime_type"),
+                "file_id": file_info.get("file_id")
+            }
+            attachments.append(attachment)
+        user_message["attachments"] = attachments
     
     messages.append(user_message)
     save_chat_messages(user_dir, chat_id, messages)
     
     try:
-        # コンテンツの作成方法を分岐
-        if file_id:
-            # File APIを使った大容量ファイル参照
-            file_ref = client.files.get(name=file_id)
-            contents = [file_ref, message]
-        elif file_data_base64:
-            # 既存の小さいファイル処理（base64データ）
-            file_data = base64.b64decode(file_data_base64)
-            file_part = types.Part.from_bytes(data=file_data, mime_type=file_mime_type)
-            contents = [file_part, message]
-        else:
-            # ファイルなしの場合
+        # コンテンツの作成 - 複数ファイル対応
+        contents = []
+        
+        # ファイル処理 - フロントエンドから送られた全ファイルを追加
+        for file_info in files:
+            file_id = file_info.get("file_id")
+            file_data_base64 = file_info.get("file_data")
+            file_name = file_info.get("file_name")
+            file_mime_type = file_info.get("file_mime_type")
+            
+            if file_id:
+                # File APIを使った大容量ファイル参照
+                file_ref = client.files.get(name=file_id)
+                contents.append(file_ref)
+            elif file_data_base64:
+                # Base64エンコードされた小さいファイル
+                file_data = base64.b64decode(file_data_base64)
+                file_part = types.Part.from_bytes(data=file_data, mime_type=file_mime_type)
+                contents.append(file_part)
+        
+        # メッセージテキストを最後に追加
+        contents.append(message)
+        
+        # ファイルがない場合はメッセージのみ
+        if not files:
             contents = message
 
         # 以下既存のコード（グラウンディング設定など）
@@ -698,7 +708,7 @@ def handle_message(data):
         
         #履歴用
         input_content = t.t_content(chat._modules._api_client, contents)
-        # ストリーミング応答開始
+
         full_response = ""
         usage_metadata = None
         formatted_metadata = ""
@@ -712,7 +722,8 @@ def handle_message(data):
             "timestamp": time.time()
         }
         messages.append(model_message)
-
+        
+        # ストリーミング応答開始
         for chunk in chat.send_message_stream(message=contents, config=configs):
             # クライアントがキャンセルをリクエストしたら中断
             if cancellation_flags.get(sid):

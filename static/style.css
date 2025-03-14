@@ -562,13 +562,6 @@ a:hover {
   box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
 }
 
-.message-attachments {
-  margin-left: 40px;
-  margin-bottom: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 
 .message-attachment {
   display: flex;
@@ -579,6 +572,16 @@ a:hover {
   border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 12px;
+}
+
+/* メッセージの添付ファイル一覧のスタイル改善 */
+.message-attachments {
+  margin-left: 40px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 90%;
 }
 
 .message-content {
@@ -664,11 +667,22 @@ a:hover {
   background-color: var(--bg-color);
 }
 
+/* 複数ファイルをラップするためのスタイル改善 */
 .attachments-preview {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+/* ファイルサイズ表示のスタイル */
+.attachment-size {
+  color: var(--text-light);
+  font-size: 11px;
+  margin-left: 4px;
 }
 
 .attachment-item {
