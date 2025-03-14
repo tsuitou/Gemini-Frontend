@@ -11,11 +11,11 @@ import base64
 import time
 import sqlite3
 import joblib
-import copy
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from flask_socketio import SocketIO, emit
 from google import genai
+from google.genai import _transformers as t
 from google.genai import types 
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch, ToolCodeExecution
 from dotenv import load_dotenv
@@ -423,7 +423,6 @@ def handle_resend_message(data):
     
     user_dir = get_user_dir(username)
     messages = load_chat_messages(user_dir, chat_id)
-    original_messages = copy.deepcopy(messages)
     
     # 指定されたインデックスが範囲外またはユーザーメッセージでない場合はエラー
     if message_index >= len(messages) or messages[message_index]["role"] != "user":
@@ -496,12 +495,21 @@ def handle_resend_message(data):
         all_grounding_links = ""
         all_grounding_queries = ""
 
+        #履歴用
+        input_content = t.t_content(chat._modules._api_client, user_message.parts)
         # ユーザーメッセージのpartsを送信
         for chunk in chat.send_message_stream(user_message.parts, config=configs):
             # クライアントがキャンセルをリクエストしたら中断
             if cancellation_flags.get(sid):
-                save_chat_messages(user_dir, chat_id, original_messages)
-                save_gemini_history(user_dir, chat_id, gemini_history)
+                messages.pop()
+                chat.record_history(
+                    user_input=input_content,
+                    model_output=[],
+                    automatic_function_calling_history=[],
+                    is_valid=False 
+                )
+                save_chat_messages(user_dir, chat_id, messages)
+                save_gemini_history(user_dir, chat_id, chat._comprehensive_history)
                 emit("stream_cancelled", {"chat_id": chat_id})
                 return
 
@@ -609,7 +617,6 @@ def handle_message(data):
 
     user_dir = get_user_dir(username)
     messages = load_chat_messages(user_dir, chat_id)
-    original_messages = copy.deepcopy(messages)
     gemini_history = load_gemini_history(user_dir, chat_id)
     chat = client.chats.create(model=model_name, history=gemini_history)
 
@@ -671,9 +678,10 @@ def handle_message(data):
             configs = GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
             )
-
+        
+        #履歴用
+        input_content = t.t_content(chat._modules._api_client, contents)
         # ストリーミング応答開始
-        response = chat.send_message_stream(message=contents, config=configs)
         full_response = ""
         usage_metadata = None
         formatted_metadata = ""
@@ -688,11 +696,18 @@ def handle_message(data):
         }
         messages.append(model_message)
 
-        for chunk in response:
+        for chunk in chat.send_message_stream(message=contents, config=configs):
             # クライアントがキャンセルをリクエストしたら中断
             if cancellation_flags.get(sid):
-                save_chat_messages(user_dir, chat_id, original_messages)
-                save_gemini_history(user_dir, chat_id, gemini_history)
+                messages.pop()
+                chat.record_history(
+                    user_input=input_content,
+                    model_output=[],
+                    automatic_function_calling_history=[],
+                    is_valid=False 
+                )
+                save_chat_messages(user_dir, chat_id, messages)
+                save_gemini_history(user_dir, chat_id, chat._comprehensive_history)
                 emit("stream_cancelled", {"chat_id": chat_id})
                 return
 
