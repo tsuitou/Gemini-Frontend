@@ -307,6 +307,17 @@ def find_gemini_index(messages, target_user_messages, include_model_responses=Tr
                     return idx + 1
     return len(messages)
 
+
+def find_gemini_user_index(messages, target_user_count):
+    """gemini履歴内の特定のユーザーメッセージのインデックスを検索"""
+    user_count = 0
+    for idx, content in enumerate(messages):
+        if content.role == "user":
+            user_count += 1
+            if user_count == target_user_count:
+                return idx
+    return None
+
 # -----------------------------------------------------------
 # 5) Flask ルートと SocketIO イベント
 # -----------------------------------------------------------
@@ -858,16 +869,6 @@ def handle_edit_message(data):
         emit("message_edited", {"index": message_index, "new_text": new_text})
     else:
         emit("error", {"message": "該当するメッセージが見つかりません"})
-
-def find_gemini_user_index(messages, target_user_count):
-    """gemini履歴内の特定のユーザーメッセージのインデックスを検索"""
-    user_count = 0
-    for idx, content in enumerate(messages):
-        if content.role == "user":
-            user_count += 1
-            if user_count == target_user_count:
-                return idx
-    return None
 
 @socketio.on("get_history_list")
 def handle_get_history_list(data):
