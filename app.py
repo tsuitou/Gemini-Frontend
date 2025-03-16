@@ -851,6 +851,15 @@ def handle_delete_message(data):
 
     emit("message_deleted", {"index": message_index})
 
+@socketio.on("disconnect")
+def handle_disconnect():
+    """クライアント切断時のクリーンアップ"""
+    sid = request.sid
+    # もしキャンセルフラグが残っていれば削除
+    cancellation_flags.pop(sid, None)
+    print(f"[disconnect] sid={sid} cleaned up.")
+
+
 @socketio.on("edit_message")
 def handle_edit_message(data):
     token = data.get("token")
