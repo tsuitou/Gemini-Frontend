@@ -55,6 +55,25 @@ window.copyToClipboard = function(button, code) {
     });
 };
 
+window.openImageViewer = function(img) {
+  const viewer = document.createElement('div');
+  viewer.className = 'image-viewer';
+  
+  const imgClone = document.createElement('img');
+  imgClone.src = img.src;
+  imgClone.alt = img.alt;
+  
+  viewer.appendChild(imgClone);
+  viewer.onclick = (e) => {
+    if (e.target === viewer) {
+      document.body.removeChild(viewer);
+    }
+  };
+  
+  document.body.appendChild(viewer);
+};
+
+
 // ファイルのMIMEタイプとファイル拡張子のマッピング
 const EXTENSION_TO_MIME = {
   pdf: "application/pdf", js: "application/x-javascript",
@@ -95,6 +114,7 @@ createApp({
     const isGenerating = ref(false);
     const groundingEnabled = ref(false);
     const codeExecutionEnabled = ref(false);
+	const imageGenerationEnabled = ref(false);
     
     // UI状態
     const searchQuery = ref('');
@@ -318,6 +338,7 @@ createApp({
 				model_name: selectedModel.value,
 				grounding_enabled: groundingEnabled.value,
 				code_execution_enabled: codeExecutionEnabled.value,
+				image_generation_enabled: imageGenerationEnabled.value,
 				files: [] // 複数ファイル情報を格納する配列
 			};
 			
@@ -505,7 +526,8 @@ createApp({
         message_index: index,
         model_name: selectedModel.value,
         grounding_enabled: groundingEnabled.value,
-        code_execution_enabled: codeExecutionEnabled.value
+        code_execution_enabled: codeExecutionEnabled.value,
+		image_generation_enabled: imageGenerationEnabled.value,
       });
       
       // UIから以降のモデル応答を削除（ユーザーメッセージは保持）
@@ -571,6 +593,14 @@ createApp({
       }
     };
     
+	const toggleImageGeneration = () => {
+	  imageGenerationEnabled.value = !imageGenerationEnabled.value;
+	  if (imageGenerationEnabled.value) {
+		// 両方を同時に有効にはできない
+		groundingEnabled.value = false;
+		codeExecutionEnabled.value = false;
+	  }
+	};
     // ---------- UI操作 ----------
     
     // テキストエリアのリサイズ
@@ -720,24 +750,30 @@ createApp({
     };
     
     // マークダウンのレンダリング（コードコピーボタン付き）
-    const renderMarkdown = (content) => {
-      if (!content) return '';
-      
-      // マークダウンをHTMLに変換
-      let html = md.render(content);
-      
-      // 数式の処理
-      html = renderMath(html);
-      
-      // コードブロックに言語ラベルとコピーボタンを追加
-      html = html.replace(/<pre><code class="language-([^"]*)">([\s\S]*?)<\/code><\/pre>/g, (match, language, code) => {
-        const escapedCode = encodeURIComponent(code);
-        const displayLang = language === 'plaintext' ? 'Text' : language.toUpperCase();
-        return `<pre data-language="${displayLang}"><code class="language-${language}">${code}</code><button class="code-copy-btn" onclick="copyToClipboard(this, '${escapedCode}')"><i class="fas fa-copy"></i> コピー</button></pre>`;
-      });
-      
-      return html;
-    };
+	const renderMarkdown = (content) => {
+	  if (!content) return '';
+	  
+	  // マークダウンをHTMLに変換
+	  let html = md.render(content);
+	  
+	  // 数式の処理
+	  html = renderMath(html);
+	  
+	  // コードブロックに言語ラベルとコピーボタンを追加
+	  html = html.replace(/<pre><code class="language-([^"]*)">([\s\S]*?)<\/code><\/pre>/g, (match, language, code) => {
+		const escapedCode = encodeURIComponent(code);
+		const displayLang = language === 'plaintext' ? 'Text' : language.toUpperCase();
+		return `<pre data-language="${displayLang}"><code class="language-${language}">${code}</code><button class="code-copy-btn" onclick="copyToClipboard(this, '${escapedCode}')"><i class="fas fa-copy"></i> コピー</button></pre>`;
+	  });
+	  
+	  // 画像をクリック可能にする（lightbox風の機能）
+	  html = html.replace(/<img src="(data:[^"]+)" alt="([^"]*)">/g, 
+		'<img src="$1" alt="$2" class="generated-image" onclick="openImageViewer(this)">'
+	  );
+	  
+	  return html;
+	};
+
     
     // メッセージコンテンツ内のクリックイベント処理
     const handleMessageContentClick = (event) => {
@@ -1377,11 +1413,12 @@ const handleDrop = (event) => {
       toggleBookmark,
       
       // メッセージ関連
-			copyMessageContent,
+	  copyMessageContent,
       messageText,
       isGenerating,
       groundingEnabled,
       codeExecutionEnabled,
+	  imageGenerationEnabled,
       canSendMessage,
       sendMessage,
       startEditMessage,
@@ -1392,6 +1429,7 @@ const handleDrop = (event) => {
       cancelGeneration,
       toggleGroundingEnabled,
       toggleCodeExecution,
+	  toggleImageGeneration,
       editingMessageId,
       editingMessageText,
       

@@ -11,6 +11,7 @@ import base64
 import time
 import sqlite3
 import joblib
+import copy
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from flask_socketio import SocketIO, emit
@@ -28,7 +29,7 @@ from filelock import FileLock
 app = Flask(__name__)
 app.jinja_env.variable_start_string = '(('
 app.jinja_env.variable_end_string = '))'
-socketio = SocketIO(app, async_mode="gevent", cors_allowed_origins="*", max_http_buffer_size=20 * 1024 * 1024,)
+socketio = SocketIO(app, async_mode="gevent", cors_allowed_origins="*", max_http_buffer_size=20 * 1024 * 1024, ping_timeout=120, ping_interval=25, binary=True)
 
 # 環境変数の読み込み
 load_dotenv()
@@ -307,7 +308,6 @@ def find_gemini_index(messages, target_user_messages, include_model_responses=Tr
                     return idx + 1
     return len(messages)
 
-
 def find_gemini_user_index(messages, target_user_count):
     """gemini履歴内の特定のユーザーメッセージのインデックスを検索"""
     user_count = 0
@@ -317,6 +317,109 @@ def find_gemini_user_index(messages, target_user_count):
             if user_count == target_user_count:
                 return idx
     return None
+
+def fix_comprehensive_history(comprehensive_history):
+    """
+    ストリーミングレスポンス用のcomprehensive historyを修正し、有効なcurated historyが生成されるようにします。
+    
+    この関数は以下を行います:
+    1. 空のpartsを持つContentオブジェクトを削除
+    2. 連続するモデル応答を単一の有効な応答に結合
+    3. 空のパーツを除去し、画像データを保持
+    
+    引数:
+        comprehensive_history: joblibから読み込まれたContentオブジェクトのリスト
+        
+    戻り値:
+        有効なcurated_historyを生成できる修正済みcomprehensive_history
+    """
+    if not comprehensive_history:
+        return []
+    
+    # ステップ1: 空のContentを削除し、モデル応答を修正/結合
+    fixed_history = []
+    i = 0
+    
+    while i < len(comprehensive_history):
+        current = comprehensive_history[i]
+        
+        # 空のpartsを持つContentをスキップ
+        if not hasattr(current, 'parts') or not current.parts:
+            i += 1
+            continue
+        
+        # モデル応答の場合、連続する応答を結合
+        if current.role == "model":
+            # 現在と後続のモデル応答からパーツを収集
+            all_parts = list(current.parts) if current.parts else []
+            
+            # 連続するモデル応答を探索
+            j = i + 1
+            while j < len(comprehensive_history) and comprehensive_history[j].role == "model":
+                next_content = comprehensive_history[j]
+                if hasattr(next_content, 'parts') and next_content.parts:
+                    all_parts.extend(next_content.parts)
+                j += 1
+            
+            # 有効なパーツがある場合のみコンテンツを作成
+            if all_parts:
+                # 修正用に現在のコンテンツのディープコピーを作成
+                new_content = copy.deepcopy(current)
+                
+                # 空のパーツを除去し、すべてのデータ型（画像含む）を保持
+                valid_parts = []
+                for part in all_parts:
+                    # テキストコンテンツの確認
+                    if hasattr(part, 'text') and part.text is not None and part.text != "":
+                        valid_parts.append(part)
+                        continue
+                    
+                    # Blob（画像）またはinline_dataの確認
+                    if hasattr(part, 'inline_data') and part.inline_data is not None:
+                        valid_parts.append(part)
+                        continue
+                        
+                    # パーツが__dictを持ち、非Noneの値があれば有効と見なす
+                    if hasattr(part, '__dict__') and part.__dict__:
+                        if any(v is not None for k, v in part.__dict__.items()):
+                            valid_parts.append(part)
+                            continue
+                
+                if valid_parts:
+                    new_content.parts = valid_parts
+                    fixed_history.append(new_content)
+            
+            # 結合したコンテンツ分だけインデックスを進める
+            i = j
+        else:
+            # ユーザーコンテンツの場合、有効なパーツがあれば追加
+            valid_user_parts = []
+            for part in current.parts:
+                # テキストコンテンツの確認
+                if hasattr(part, 'text') and part.text is not None and part.text != "":
+                    valid_user_parts.append(part)
+                    continue
+                
+                # Blob（画像）またはinline_dataの確認
+                if hasattr(part, 'inline_data') and part.inline_data is not None:
+                    valid_user_parts.append(part)
+                    continue
+                    
+                # パーツが__dictを持ち、非Noneの値があれば有効と見なす
+                if hasattr(part, '__dict__') and part.__dict__:
+                    if any(v is not None for k, v in part.__dict__.items()):
+                        valid_user_parts.append(part)
+                        continue
+            
+            if valid_user_parts:
+                user_content = copy.deepcopy(current)
+                user_content.parts = valid_user_parts
+                fixed_history.append(user_content)
+            
+            i += 1
+    
+    # 空のコンテンツを削除しモデル応答を結合した修正済み履歴を返す
+    return fixed_history
 
 # -----------------------------------------------------------
 # 5) Flask ルートと SocketIO イベント
@@ -429,6 +532,7 @@ def handle_resend_message(data):
     model_name = data.get("model_name")
     grounding_enabled = data.get("grounding_enabled", False)
     code_execution_enabled = data.get("code_execution_enabled", False)
+    image_generation_enabled = data.get("image_generation_enabled", False)  # 新しいフラグ
     
     user_dir = get_user_dir(username)
     messages = load_chat_messages(user_dir, chat_id)
@@ -443,7 +547,7 @@ def handle_resend_message(data):
         messages = messages[:message_index + 1]
         
     # Gemini履歴を取得
-    gemini_history = load_gemini_history(user_dir, chat_id)
+    gemini_history = fix_comprehensive_history(load_gemini_history(user_dir, chat_id))
     
     # 対象のユーザーメッセージを特定し格納
     target_user_messages = sum(1 for msg in messages if msg["role"] == "user")
@@ -476,19 +580,26 @@ def handle_resend_message(data):
             configs = GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
                 tools=[google_search_tool],
+                response_modalities=['Text'],
             )
         elif code_execution_enabled:
             configs = GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
                 tools=[code_execution_tool],
+                response_modalities=['Text'],
+            )
+        elif image_generation_enabled:
+            configs = GenerateContentConfig(
+                response_modalities=['Text', 'Image']
             )
         else:
             configs = GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
+                response_modalities=['Text'],
             )
 
         # チャットインスタンスを作成（ユーザーメッセージを含まない履歴）
-        chat = client.chats.create(model=model_name, history=truncated_history)
+        chat = client.chats.create(model=model_name, history=truncated_history, config=configs)
         
         # モデル応答用のモック要素を追加
         model_message = {
@@ -507,7 +618,7 @@ def handle_resend_message(data):
         #履歴用
         input_content = t.t_content(chat._modules._api_client, user_message.parts)
         # ユーザーメッセージのpartsを送信
-        for chunk in chat.send_message_stream(user_message.parts, config=configs):
+        for chunk in chat.send_message_stream(user_message.parts):
             # クライアントがキャンセルをリクエストしたら中断
             if cancellation_flags.get(sid):
                 messages.pop()
@@ -537,6 +648,13 @@ def handle_resend_message(data):
                         chunk_text += f"\n**Code Execution Result**\n```Python\n{part.code_execution_result}\n```\n"
                     if hasattr(chunk, 'thought') and chunk.thought:
                          chunk_text += f"\nThought:\n{chunk.thought}\n"
+                    if hasattr(part, 'inline_data') and part.inline_data is not None:
+                        mime = part.inline_data.mime_type
+                        data = part.inline_data.data
+                        # バイナリデータの場合は適切にBase64エンコード
+                        if isinstance(data, bytes):
+                            data = base64.b64encode(data).decode('utf-8')
+                        chunk_text += f"\n![Generated Image](data:{mime};base64,{data})\n"
 
             # グラウンディング処理
             if hasattr(chunk, "candidates") and chunk.candidates:
@@ -584,7 +702,7 @@ def handle_resend_message(data):
 
         # Gemini履歴を保存
         save_chat_messages(user_dir, chat_id, messages)
-        save_gemini_history(user_dir, chat_id, chat.get_history(curated=True))
+        save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
         emit("gemini_response_complete", {"chat_id": chat_id})
         # 再送信完了通知
         emit("message_resent", {"index": message_index})
@@ -622,14 +740,14 @@ def handle_message(data):
     message = data.get("message")
     grounding_enabled = data.get("grounding_enabled", False)
     code_execution_enabled = data.get("code_execution_enabled", False)
+    image_generation_enabled = data.get("image_generation_enabled", False)
     
     # 複数ファイル情報を取得
     files = data.get("files", [])
 
     user_dir = get_user_dir(username)
     messages = load_chat_messages(user_dir, chat_id)
-    gemini_history = load_gemini_history(user_dir, chat_id)
-    chat = client.chats.create(model=model_name, history=gemini_history)
+    gemini_history = fix_comprehensive_history(load_gemini_history(user_dir, chat_id))
 
     # 新規チャットの場合、past_chats にタイトルを登録
     past_chats = load_past_chats(user_dir)
@@ -690,22 +808,28 @@ def handle_message(data):
         if not files:
             contents = message
 
-        # 以下既存のコード（グラウンディング設定など）
         if grounding_enabled:
             configs = GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
                 tools=[google_search_tool],
+                response_modalities=['Text']
             )
         elif code_execution_enabled:
             configs = GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
                 tools=[code_execution_tool],
+                response_modalities=['Text']
+            )
+        elif image_generation_enabled:
+            configs = GenerateContentConfig(
+                response_modalities=['Text', 'Image']
             )
         else:
             configs = GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
+                response_modalities=['Text']
             )
-        
+        chat = client.chats.create(model=model_name, history=gemini_history, config=configs)
         #履歴用
         input_content = t.t_content(chat._modules._api_client, contents)
 
@@ -724,7 +848,7 @@ def handle_message(data):
         messages.append(model_message)
         
         # ストリーミング応答開始
-        for chunk in chat.send_message_stream(message=contents, config=configs):
+        for chunk in chat.send_message_stream(message=contents):
             # クライアントがキャンセルをリクエストしたら中断
             if cancellation_flags.get(sid):
                 messages.pop()
@@ -754,6 +878,13 @@ def handle_message(data):
                         chunk_text += f"\n**Code Execution Result**\n```Python\n{part.code_execution_result}\n```\n"
                     if hasattr(chunk, 'thought') and chunk.thought:
                          chunk_text += f"\nThought:\n{chunk.thought}\n"
+                    if hasattr(part, 'inline_data') and part.inline_data is not None:
+                        mime = part.inline_data.mime_type
+                        data = part.inline_data.data
+                        # バイナリデータの場合は適切にBase64エンコード
+                        if isinstance(data, bytes):
+                            data = base64.b64encode(data).decode('utf-8')
+                        chunk_text += f"\n![Generated Image](data:{mime};base64,{data})\n"
 
             # グラウンディング処理をここで行う
             if hasattr(chunk, "candidates") and chunk.candidates:
@@ -801,7 +932,7 @@ def handle_message(data):
 
         # Gemini履歴を保存
         save_chat_messages(user_dir, chat_id, messages)
-        save_gemini_history(user_dir, chat_id, chat.get_history(curated=True))
+        save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
         emit("gemini_response_complete", {"chat_id": chat_id})
 
     except Exception as e:
@@ -858,7 +989,6 @@ def handle_disconnect():
     # もしキャンセルフラグが残っていれば削除
     cancellation_flags.pop(sid, None)
     print(f"[disconnect] sid={sid} cleaned up.")
-
 
 @socketio.on("edit_message")
 def handle_edit_message(data):
