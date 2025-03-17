@@ -366,7 +366,6 @@ def find_gemini_index(messages, target_user_messages, include_model_responses=Tr
     return len(messages)
 
 def find_gemini_user_index(messages, target_user_count):
-    """gemini履歴内の特定のユーザーメッセージのインデックスを検索"""
     user_count = 0
     for idx, content in enumerate(messages):
         if content.role == "user":
@@ -376,20 +375,6 @@ def find_gemini_user_index(messages, target_user_count):
     return None
 
 def fix_comprehensive_history(comprehensive_history):
-    """
-    ストリーミングレスポンス用のcomprehensive historyを修正し、有効なcurated historyが生成されるようにします。
-    
-    この関数は以下を行います:
-    1. 空のpartsを持つContentオブジェクトを削除
-    2. 連続するモデル応答を単一の有効な応答に結合
-    3. 空のパーツを除去し、画像データを保持
-    
-    引数:
-        comprehensive_history: joblibから読み込まれたContentオブジェクトのリスト
-        
-    戻り値:
-        有効なcurated_historyを生成できる修正済みcomprehensive_history
-    """
     if not comprehensive_history:
         return []
     
@@ -598,6 +583,9 @@ def handle_resend_message(data):
     if message_index >= len(messages) or messages[message_index]["role"] != "user":
         emit("error", {"message": "再送信できるのはユーザーメッセージのみです"})
         return
+        
+    messages_to_delete = messages[message_index:]
+    delete_chat_images(messages_to_delete)
     
     # 指定されたメッセージまでの履歴を保持し、そのメッセージ後のモデル応答を削除
     if message_index + 1 < len(messages):
