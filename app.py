@@ -3,6 +3,8 @@ from gevent import monkey
 monkey.patch_all()
 
 import os
+import uuid
+import io
 import json
 import bcrypt
 import hashlib
@@ -208,6 +210,56 @@ EXTENSION_TO_MIME = {
 }
 
 USER_DIR = "data/"  # ユーザーデータ保存ディレクトリ
+IMAGE_DIR = "static/images"
+
+os.makedirs(IMAGE_DIR, exist_ok=True)
+
+def save_generated_image(username, base64_data, mime_type):
+    # ユーザー別ディレクトリ作成
+    user_image_dir = os.path.join(IMAGE_DIR, username)
+    os.makedirs(user_image_dir, exist_ok=True)
+    
+    # 拡張子を取得
+    ext = mime_type.split('/')[-1]
+    if ext == 'jpeg':
+        ext = 'jpg'  # 一般的な拡張子に統一
+    
+    # ファイル名生成（ユニークなIDを使用）
+    filename = f"{str(uuid.uuid4())}.{ext}"
+    filepath = os.path.join(user_image_dir, filename)
+    
+    try:
+        # Base64データをバイナリに変換して保存
+        image_data = base64.b64decode(base64_data)
+        with open(filepath, 'wb') as f:
+            f.write(image_data)
+        
+        # 公開用URL（相対パス）
+        url = '/static/images/test/' + filename
+        print(url)
+        return url
+    except Exception as e:
+        print(f"画像保存エラー: {str(e)}")
+        return None
+
+def delete_image_file(image_url):
+    if not image_url:
+        return
+    
+    try:
+        # URLの先頭の/を削除してファイルパスに変換
+        filepath = image_url.lstrip('/')
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            print(f"画像ファイル削除: {filepath}")
+    except Exception as e:
+        print(f"画像ファイル削除エラー: {str(e)}")
+
+def delete_chat_images(messages):
+    for message in messages:
+        if message.get("role") == "model" and message.get("images"):
+            for image_url in message["images"]:
+                delete_image_file(image_url)
 
 def get_user_dir(username):
     user_dir = os.path.join(USER_DIR, username)
@@ -283,6 +335,11 @@ def save_gemini_history(user_dir, chat_id, history):
 
 def delete_chat(user_dir, chat_id):
     try:
+        # 画像を削除するために先にメッセージを読み込む
+        messages = load_chat_messages(user_dir, chat_id)
+        # 画像ファイルを削除
+        delete_chat_images(messages)
+        
         os.remove(os.path.join(user_dir, f"{chat_id}-st_messages"))
         os.remove(os.path.join(user_dir, f"{chat_id}-gemini_messages"))
     except FileNotFoundError:
@@ -649,12 +706,32 @@ def handle_resend_message(data):
                     if hasattr(chunk, 'thought') and chunk.thought:
                          chunk_text += f"\nThought:\n{chunk.thought}\n"
                     if hasattr(part, 'inline_data') and part.inline_data is not None:
-                        mime = part.inline_data.mime_type
-                        data = part.inline_data.data
-                        # バイナリデータの場合は適切にBase64エンコード
-                        if isinstance(data, bytes):
-                            data = base64.b64encode(data).decode('utf-8')
-                        chunk_text += f"\n![Generated Image](data:{mime};base64,{data})\n"
+                        try:
+                            mime = part.inline_data.mime_type
+                            data = part.inline_data.data
+                            
+                            # バイナリデータの場合は適切にBase64エンコード
+                            if isinstance(data, bytes):
+                                data = base64.b64encode(data).decode('utf-8')
+                            
+                            # 画像をファイルとして保存
+                            image_url = save_generated_image(username, data, mime)
+                            
+                            if image_url:
+                                # マークダウン形式の画像参照を追加
+                                chunk_text += f"\n![Generated Image]({image_url})\n"
+                                
+                                # 画像URLを記録（削除時に使用）
+                                if "images" not in messages[-1]:
+                                    messages[-1]["images"] = []
+                                messages[-1]["images"].append(image_url)
+                            else:
+                                chunk_text += "\n[画像の保存に失敗しました]\n"
+                            
+                        except Exception as img_error:
+                            print(f"画像処理エラー: {str(img_error)}")
+                            # エラーがあっても処理を続行
+                            chunk_text += "\n[画像の処理中にエラーが発生しました]\n"
 
             # グラウンディング処理
             if hasattr(chunk, "candidates") and chunk.candidates:
@@ -879,12 +956,32 @@ def handle_message(data):
                     if hasattr(chunk, 'thought') and chunk.thought:
                          chunk_text += f"\nThought:\n{chunk.thought}\n"
                     if hasattr(part, 'inline_data') and part.inline_data is not None:
-                        mime = part.inline_data.mime_type
-                        data = part.inline_data.data
-                        # バイナリデータの場合は適切にBase64エンコード
-                        if isinstance(data, bytes):
-                            data = base64.b64encode(data).decode('utf-8')
-                        chunk_text += f"\n![Generated Image](data:{mime};base64,{data})\n"
+                        try:
+                            mime = part.inline_data.mime_type
+                            data = part.inline_data.data
+                            
+                            # バイナリデータの場合は適切にBase64エンコード
+                            if isinstance(data, bytes):
+                                data = base64.b64encode(data).decode('utf-8')
+                            
+                            # 画像をファイルとして保存
+                            image_url = save_generated_image(username, data, mime)
+                            
+                            if image_url:
+                                # マークダウン形式の画像参照を追加
+                                chunk_text += f"\n![Generated Image]({image_url})\n"
+                                
+                                # 画像URLを記録（削除時に使用）
+                                if "images" not in messages[-1]:
+                                    messages[-1]["images"] = []
+                                messages[-1]["images"].append(image_url)
+                            else:
+                                chunk_text += "\n[画像の保存に失敗しました]\n"
+                            
+                        except Exception as img_error:
+                            print(f"画像処理エラー: {str(img_error)}")
+                            # エラーがあっても処理を続行
+                            chunk_text += "\n[画像の処理中にエラーが発生しました]\n"
 
             # グラウンディング処理をここで行う
             if hasattr(chunk, "candidates") and chunk.candidates:
@@ -969,6 +1066,11 @@ def handle_delete_message(data):
     if message_index == 0:
         delete_chat(user_dir, chat_id)
     else:
+        # 削除されるメッセージ以降の画像を削除
+        messages_to_delete = messages[message_index:]
+        delete_chat_images(messages_to_delete)
+        
+        # 以下は既存のコード
         deleted_message_role = messages[message_index]["role"]
         messages = messages[:message_index]
         target_user_messages = sum(1 for msg in messages if msg["role"] == "user")

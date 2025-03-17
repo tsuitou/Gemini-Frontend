@@ -61,9 +61,60 @@ window.openImageViewer = function(img) {
   
   const imgClone = document.createElement('img');
   imgClone.src = img.src;
-  imgClone.alt = img.alt;
+  imgClone.alt = img.alt || 'Generated Image';
   
+  // 画像ダウンロードボタン追加
+  const downloadBtn = document.createElement('button');
+  downloadBtn.className = 'image-download-btn';
+  downloadBtn.innerHTML = '<i class="fas fa-download"></i>';
+  downloadBtn.onclick = (e) => {
+    e.stopPropagation();
+    
+    // 画像のURLからファイル名を抽出（URLの最後の部分）
+    let filename = 'generated-image.png';
+    
+    // 通常のURL（/static/images/...）の場合
+    if (img.src.startsWith('/') || img.src.startsWith('http')) {
+      const urlParts = img.src.split('/');
+      if (urlParts.length > 0) {
+        filename = urlParts[urlParts.length - 1];
+      }
+    }
+    
+    // データURLの場合はMIMEタイプから拡張子を決定
+    if (img.src.startsWith('data:')) {
+      const mimeMatch = img.src.match(/data:([a-z]+)\/([a-z0-9.]+);base64,/i);
+      if (mimeMatch && mimeMatch[2]) {
+        const ext = mimeMatch[2] === 'jpeg' ? 'jpg' : mimeMatch[2];
+        filename = `generated-image.${ext}`;
+      }
+    }
+    
+    // ダウンロードリンクを作成
+    const downloadLink = document.createElement('a');
+    downloadLink.href = img.src;
+    downloadLink.download = filename;
+    downloadLink.style.display = 'none';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+  };
+  
+  // 閉じるボタン追加
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'image-close-btn';
+  closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+  closeBtn.onclick = (e) => {
+    e.stopPropagation();
+    document.body.removeChild(viewer);
+  };
+  
+  // 要素を追加
   viewer.appendChild(imgClone);
+  viewer.appendChild(downloadBtn);
+  viewer.appendChild(closeBtn);
+  
+  // 背景クリックでも閉じる
   viewer.onclick = (e) => {
     if (e.target === viewer) {
       document.body.removeChild(viewer);
@@ -767,9 +818,8 @@ createApp({
 	  });
 	  
 	  // 画像をクリック可能にする（lightbox風の機能）
-	  html = html.replace(/<img src="(data:[^"]+)" alt="([^"]*)">/g, 
-		'<img src="$1" alt="$2" class="generated-image" onclick="openImageViewer(this)">'
-	  );
+		html = html.replace(/<img src="([^"]+)" alt="([^"]*)">/g, 
+			'<img src="$1" alt="$2" class="generated-image" onclick="openImageViewer(this)">');
 	  
 	  return html;
 	};
