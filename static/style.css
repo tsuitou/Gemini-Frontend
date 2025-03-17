@@ -1263,7 +1263,7 @@ pre:hover .code-copy-btn {
 
 /* 生成された画像のスタイル改善 */
 .generated-image {
-  max-width: 30%;
+  width: 30%;
   height: auto;
   border-radius: 8px;
   cursor: pointer;
