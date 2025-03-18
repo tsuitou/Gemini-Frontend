@@ -15,30 +15,6 @@ const md = window.markdownit({
   }
 });
 
-// 数式のレンダリング設定
-function renderMath(content) {
-  if (!content) return '';
-  
-  // インライン数式とブロック数式の処理
-  return content
-    .replace(/\$\$(.*?)\$\$/g, (_, math) => {
-      try {
-        return katex.renderToString(math, { displayMode: true });
-      } catch (e) {
-        console.error('KaTeX error:', e);
-        return `$$${math}$$`;
-      }
-    })
-    .replace(/\$(.*?)\$/g, (_, math) => {
-      try {
-        return katex.renderToString(math, { displayMode: false });
-      } catch (e) {
-        console.error('KaTeX error:', e);
-        return `$${math}$`;
-      }
-    });
-}
-
 // コードコピー機能のグローバル関数
 window.copyToClipboard = function(button, code) {
   const decodedCode = decodeURIComponent(code);
@@ -513,22 +489,27 @@ createApp({
 		};
     
     // メッセージの編集モードを開始
-    const startEditMessage = (index, message) => {
-      if (message.role !== 'user' || isGenerating.value) return;
-      
-      // 編集中のメッセージを設定
-      editingMessageId.value = index;
-      editingMessageText.value = message.content;
-      
-      // 次のティックでテキストエリアにフォーカス
-      nextTick(() => {
-        const textarea = document.getElementById(`edit-message-${index}`);
-        if (textarea) {
-          textarea.focus();
-          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-        }
-      });
-    };
+		const startEditMessage = (index, message) => {
+			if (message.role !== 'user' || isGenerating.value) return;
+			
+			// 編集中のメッセージを設定
+			editingMessageId.value = index;
+			editingMessageText.value = message.content;
+			
+			// 次のティックでテキストエリアにフォーカスとサイズ調整
+			nextTick(() => {
+				const textarea = document.getElementById(`edit-message-${index}`);
+				if (textarea) {
+					// まずテキストエリアのサイズを調整
+					textarea.style.height = 'auto';
+					textarea.style.height = Math.min(textarea.scrollHeight, 300) + 'px';
+					
+					// その後フォーカスを設定
+					textarea.focus();
+					textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+				}
+			});
+		};
     
     // メッセージ編集をキャンセル
     const cancelEditMessage = () => {
@@ -660,7 +641,7 @@ createApp({
       if (!textarea) return;
       
       textarea.style.height = 'auto';
-      textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+      textarea.style.height = Math.min(textarea.scrollHeight, 300) + 'px';
     };
     
     // 編集用テキストエリアの調整
@@ -801,29 +782,91 @@ createApp({
     };
     
     // マークダウンのレンダリング（コードコピーボタン付き）
-	const renderMarkdown = (content) => {
-	  if (!content) return '';
-	  
-	  // マークダウンをHTMLに変換
-	  let html = md.render(content);
-	  
-	  // 数式の処理
-	  html = renderMath(html);
-	  
-	  // コードブロックに言語ラベルとコピーボタンを追加
-	  html = html.replace(/<pre><code class="language-([^"]*)">([\s\S]*?)<\/code><\/pre>/g, (match, language, code) => {
-		const escapedCode = encodeURIComponent(code);
-		const displayLang = language === 'plaintext' ? 'Text' : language.toUpperCase();
-		return `<pre data-language="${displayLang}"><code class="language-${language}">${code}</code><button class="code-copy-btn" onclick="copyToClipboard(this, '${escapedCode}')"><i class="fas fa-copy"></i> コピー</button></pre>`;
-	  });
-	  
-	  // 画像をクリック可能にする（lightbox風の機能）
-		html = html.replace(/<img src="([^"]+)" alt="([^"]*)">/g, 
-			'<img src="$1" alt="$2" class="generated-image" onclick="openImageViewer(this)">');
-	  
-	  return html;
-	};
-
+		const renderMarkdown = (content) => {
+			if (!content) return '';
+			
+			// 手順1: マークダウン内のコードブロックを一時的にエスケープ
+			const codeBlocks = [];
+			let processedContent = content.replace(/```([\s\S]*?)```/g, (match) => {
+				const id = `CODE_BLOCK_${codeBlocks.length}`;
+				codeBlocks.push(match);
+				return id;
+			});
+			
+			// 手順2: インラインコードもエスケープ
+			const inlineCodes = [];
+			processedContent = processedContent.replace(/`([^`]+)`/g, (match) => {
+				const id = `INLINE_CODE_${inlineCodes.length}`;
+				inlineCodes.push(match);
+				return id;
+			});
+			
+			// 手順3: 数式処理
+			let tempContent = processedContent;
+			
+			// ブロック数式をHTMLプレースホルダーに置換
+			const blockMathPlaceholders = [];
+			tempContent = tempContent.replace(/\$\$(.*?)\$\$/g, (match, math) => {
+				try {
+					const rendered = katex.renderToString(math, { displayMode: true });
+					const id = `BLOCK_MATH_${blockMathPlaceholders.length}`;
+					blockMathPlaceholders.push(rendered);
+					return id;
+				} catch (e) {
+					console.error('KaTeX block math error:', e);
+					return match;
+				}
+			});
+			
+			// インライン数式をHTMLプレースホルダーに置換
+			const inlineMathPlaceholders = [];
+			tempContent = tempContent.replace(/\$(.*?)\$/g, (match, math) => {
+				try {
+					const rendered = katex.renderToString(math, { displayMode: false });
+					const id = `INLINE_MATH_${inlineMathPlaceholders.length}`;
+					inlineMathPlaceholders.push(rendered);
+					return id;
+				} catch (e) {
+					console.error('KaTeX inline math error:', e);
+					return match;
+				}
+			});
+			
+			// 手順4: コードブロックを元に戻す
+			tempContent = tempContent.replace(/CODE_BLOCK_(\d+)/g, (_, index) => {
+				return codeBlocks[parseInt(index)];
+			});
+			
+			// 手順5: インラインコードを元に戻す
+			tempContent = tempContent.replace(/INLINE_CODE_(\d+)/g, (_, index) => {
+				return inlineCodes[parseInt(index)];
+			});
+			
+			// 手順6: マークダウンをHTMLに変換
+			let html = md.render(tempContent);
+			
+			// 手順7: 数式プレースホルダーを実際のHTMLに置換
+			html = html.replace(/BLOCK_MATH_(\d+)/g, (_, index) => {
+				return blockMathPlaceholders[parseInt(index)];
+			});
+			
+			html = html.replace(/INLINE_MATH_(\d+)/g, (_, index) => {
+				return inlineMathPlaceholders[parseInt(index)];
+			});
+			
+			// 手順8: コードブロックに言語ラベルとコピーボタンを追加
+			html = html.replace(/<pre><code class="language-([^"]*)">([\s\S]*?)<\/code><\/pre>/g, (match, language, code) => {
+				const escapedCode = encodeURIComponent(code);
+				const displayLang = language === 'plaintext' ? 'Text' : language.toUpperCase();
+				return `<pre data-language="${displayLang}"><code class="language-${language}">${code}</code><button class="code-copy-btn" onclick="copyToClipboard(this, '${escapedCode}')"><i class="fas fa-copy"></i> コピー</button></pre>`;
+			});
+			
+			// 手順9: 画像をクリック可能にする（lightbox風の機能）
+			html = html.replace(/<img src="([^"]+)" alt="([^"]*)">/g, 
+				'<img src="$1" alt="$2" class="generated-image" onclick="openImageViewer(this)">');
+			
+			return html;
+		};
     
     // メッセージコンテンツ内のクリックイベント処理
     const handleMessageContentClick = (event) => {

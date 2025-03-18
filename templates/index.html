@@ -195,12 +195,6 @@
                     <div class="message-role">{{ message.role === 'user' ? 'User' : 'Model' }}</div>
                   </div>
                   <div class="message-actions" v-if="editingMessageId !== index">
-										<button 
-											class="message-action-btn"
-											@click="copyMessageContent(message.content)"
-											title="メッセージをコピー"
-										>
-											<i class="fas fa-copy"></i>
 										</button>
                     <button 
                       v-if="message.role === 'user'" 
@@ -218,6 +212,12 @@
                     >
                       <i class="fas fa-sync-alt"></i>
                     </button>
+										<button 
+											class="message-action-btn"
+											@click="copyMessageContent(message.content)"
+											title="メッセージをコピー"
+										>
+											<i class="fas fa-copy"></i>
                     <button 
                       class="message-action-btn"
                       @click="deleteMessage(index)"
@@ -278,6 +278,7 @@
 										v-model="editingMessageText"
 										class="message-edit-textarea"
 										placeholder="メッセージを入力..."
+										spellcheck="false"
 										@input="adjustEditTextarea"
 										@keydown.esc="cancelEditMessage"
 										@keydown.tab.prevent="handleEditTab($event)"
@@ -335,6 +336,7 @@
 								v-model="messageText" 
 								class="message-input" 
 								placeholder="メッセージを入力..."
+								spellcheck="false"
 								@input="resizeTextarea"
 								@keydown.tab.prevent="handleTab"
 								@keydown.shift.tab.prevent="handleShiftTab"
