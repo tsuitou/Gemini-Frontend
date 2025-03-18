@@ -1216,4 +1216,4 @@ if __name__ == "__main__":
     init_db()
 
     # geventベースでサーバ起動（geventインストール済みの場合に自動で使用）
-    socketio.run(app, debug=True, host="0.0.0.0", port=5000)
+    socketio.run(app, debug=False, host="0.0.0.0", port=5000)
