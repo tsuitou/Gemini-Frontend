@@ -87,8 +87,11 @@ def register_user(username, password):
     if username == "" or password == "":
         return {"status": "error", "message": "ユーザー名かパスワードが空欄です"}
     # 英数字以外の文字がないかチェック
-    if any(not re.match(r"^[a-zA-Z0-9]*$", field) for field in (username, password)):
-        return {"status": "error", "message": "英数字以外の文字が含まれています。"}
+    if not re.match(r"^[a-zA-Z0-9]*$", username):
+        return {"status": "error", "message": "ユーザー名には英数字のみ使用可能です。"}
+            
+    if not re.match(r"^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>\/?]*$", password):
+        return {"status": "error", "message": "パスワードには英数字と記号のみ使用可能です。"}
 
     # すでに同名ユーザーが存在するかチェック
     conn = sqlite3.connect(DB_FILE)
@@ -235,7 +238,7 @@ def save_generated_image(username, base64_data, mime_type):
             f.write(image_data)
         
         # 公開用URL（相対パス）
-        url = '/static/images/test/' + filename
+        url = '/static/images/' + username + '/' + filename
         print(url)
         return url
     except Exception as e:
