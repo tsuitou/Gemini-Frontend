@@ -365,9 +365,17 @@ def delete_chat(user_dir, chat_id):
         messages = load_chat_messages(user_dir, chat_id)
         # 画像ファイルを削除
         delete_chat_images(messages)
-        
+
         os.remove(os.path.join(user_dir, f"{chat_id}-st_messages"))
         os.remove(os.path.join(user_dir, f"{chat_id}-gemini_messages"))
+        
+        lock_file_message = os.path.join(user_dir, f"{chat_id}-st_messages.lock")
+        if os.path.exists(lock_file_message):
+            os.remove(lock_file_message)
+        lock_file_gemini = os.path.join(user_dir, f"{chat_id}-gemini_messages.lock")
+        if os.path.exists(lock_file_gemini):
+            os.remove(lock_file_gemini)
+        
     except FileNotFoundError:
         pass
     past_chats = load_past_chats(user_dir)
