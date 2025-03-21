@@ -262,6 +262,7 @@ createApp({
     
     // 新規チャットの作成
     const createNewChat = () => {
+			isGenerating.value = false;
       socket.emit('new_chat', { token: token.value });
     };
     
@@ -342,7 +343,6 @@ createApp({
     // メッセージの送信
 		const sendMessage = async () => {
 			if (!canSendMessage.value) return;
-			isGenerating.value = true;
 			// 新規チャットの場合
 			if (!currentChatId.value) {
 				await createNewChat();
@@ -356,7 +356,7 @@ createApp({
 					}, 100);
 				});
 			}
-			
+			isGenerating.value = true;
 			// 送信データの準備
 			const messageData = {
 				token: token.value,
@@ -458,10 +458,12 @@ createApp({
 									file_id: result.file_id
 								});
 							} else if (result && result.status === 'error') {
+								isGenerating.value = false;
 								showToastMessage('ファイルアップロードエラー: ' + result.message);
 							}
 						}
 					} catch (error) {
+						isGenerating.value = false;
 						showToastMessage('ファイルアップロードエラー: ' + error.message);
 						return;
 					}
@@ -1304,7 +1306,6 @@ const handleDrop = (event) => {
     // チャット操作
     socket.on('chat_created', (data) => {
       currentChatId.value = data.chat_id;
-      isGenerating.value = false;
       // 現在のチャットを設定（履歴には追加しない）
       currentChat.value = {
         id: data.chat_id,
