@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LLMチャットアプリ</title>
+  <title>Gemini</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.5.13/vue.global.prod.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.8.1/socket.io.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
@@ -283,6 +283,7 @@
 										@keydown.esc="cancelEditMessage"
 										@keydown.tab.prevent="handleEditTab($event)"
 										@keydown.shift.tab.prevent="handleEditShiftTab($event)"
+										@keydown.ctrl.enter="saveEditMessage(index)"
 									></textarea>
 								</div>
               </div>
