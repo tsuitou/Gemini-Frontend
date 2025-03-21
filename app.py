@@ -289,52 +289,75 @@ def get_username_from_token(token):
 # -----------------------------------------------------------
 def load_past_chats(user_dir):
     past_chats_file = os.path.join(user_dir, "past_chats_list")
-    lock_file = past_chats_file + ".lock"  # ロック用ファイル(.lock)
-    # withブロックを抜けるまでロックが保持される
-    with FileLock(lock_file):
+    lock_file = past_chats_file + ".lock"
+    lock = FileLock(lock_file, timeout=10)  # タイムアウトを10秒に設定
+    try:
+        lock.acquire()
         try:
             past_chats = joblib.load(past_chats_file)
         except Exception:
             past_chats = {}
-    return past_chats
+        return past_chats
+    finally:
+        lock.release()  # 例外が発生してもロックを確実に解除
 
 def save_past_chats(user_dir, past_chats):
     past_chats_file = os.path.join(user_dir, "past_chats_list")
     lock_file = past_chats_file + ".lock"
-    with FileLock(lock_file):
+    lock = FileLock(lock_file, timeout=10)
+    try:
+        lock.acquire()
         joblib.dump(past_chats, past_chats_file)
+    finally:
+        lock.release()
 
 def load_chat_messages(user_dir, chat_id):
     messages_file = os.path.join(user_dir, f"{chat_id}-st_messages")
     lock_file = messages_file + ".lock"
-    with FileLock(lock_file):
+    lock = FileLock(lock_file, timeout=10)
+    try:
+        lock.acquire()
         try:
             messages = joblib.load(messages_file)
         except Exception:
             messages = []
-    return messages
+        return messages
+    finally:
+        lock.release()
 
 def save_chat_messages(user_dir, chat_id, messages):
     messages_file = os.path.join(user_dir, f"{chat_id}-st_messages")
     lock_file = messages_file + ".lock"
-    with FileLock(lock_file):
+    lock = FileLock(lock_file, timeout=10)
+    try:
+        lock.acquire()
         joblib.dump(messages, messages_file)
+    finally:
+        lock.release()
 
 def load_gemini_history(user_dir, chat_id):
     history_file = os.path.join(user_dir, f"{chat_id}-gemini_messages")
     lock_file = history_file + ".lock"
-    with FileLock(lock_file):
+    lock = FileLock(lock_file, timeout=10)
+    try:
+        lock.acquire()
         try:
             history = joblib.load(history_file)
         except Exception:
             history = []
-    return history
+        return history
+    finally:
+        lock.release()
 
 def save_gemini_history(user_dir, chat_id, history):
     history_file = os.path.join(user_dir, f"{chat_id}-gemini_messages")
     lock_file = history_file + ".lock"
-    with FileLock(lock_file):
+    lock = FileLock(lock_file, timeout=10)
+    try:
+        lock.acquire()
         joblib.dump(history, history_file)
+    finally:
+        lock.release()
 
 def delete_chat(user_dir, chat_id):
     try:
