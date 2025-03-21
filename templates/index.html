@@ -283,6 +283,7 @@
 										@keydown.esc="cancelEditMessage"
 										@keydown.tab.prevent="handleEditTab($event)"
 										@keydown.shift.tab.prevent="handleEditShiftTab($event)"
+										@keydown.ctrl.enter="saveEditMessage(index)"
 									></textarea>
 								</div>
               </div>
