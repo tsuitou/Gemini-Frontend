@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini管理ページ</title>
+  <link rel="stylesheet" href="(( url_for('static', filename='libs/font-awesome/6.7.2/css/all.min.css') ))">
+  <style>
+    :root {
+      --primary-color: #4f46e5;
+      --primary-dark: #4338ca;
+      --primary-light: #eef2ff;
+      --success-color: #10b981;
+      --warning-color: #f59e0b;
+      --danger-color: #ef4444;
+      --text-color: #1f2937;
+      --text-light: #6b7280;
+      --bg-color: #ffffff;
+      --bg-light: #f9fafb;
+      --bg-gray: #f3f4f6;
+      --border-color: #e5e7eb;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --border-radius: 8px;
+      --transition: all 0.3s ease;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-color);
+      background-color: var(--bg-light);
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .title {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--primary-color);
+    }
+
+    .login-container {
+      max-width: 400px;
+      margin: 100px auto;
+      padding: 24px;
+      background-color: var(--bg-color);
+      border-radius: var(--border-radius);
+      box-shadow: var(--shadow-md);
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 16px;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 10px 16px;
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .btn:hover {
+      background-color: var(--primary-dark);
+    }
+
+    .btn-secondary {
+      background-color: var(--bg-gray);
+      color: var(--text-color);
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--border-color);
+    }
+
+    .btn-danger {
+      background-color: var(--danger-color);
+    }
+
+    .btn-danger:hover {
+      background-color: #dc2626;
+    }
+
+    .alert {
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      border-radius: var(--border-radius);
+    }
+
+    .alert-danger {
+      background-color: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: var(--danger-color);
+    }
+
+    .alert-success {
+      background-color: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      color: var(--success-color);
+    }
+
+    .card {
+      background-color: var(--bg-color);
+      border-radius: var(--border-radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 16px;
+      background-color: var(--bg-light);
+      border-bottom: 1px solid var(--border-color);
+      font-weight: 600;
+    }
+
+    .card-body {
+      padding: 16px;
+    }
+
+    .user-list {
+      list-style: none;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .user-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .user-item:last-child {
+      border-bottom: none;
+    }
+
+    .user-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .user-button {
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .chat-list {
+      list-style: none;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .chat-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .chat-item:hover {
+      background-color: var(--bg-light);
+    }
+
+    .chat-item:last-child {
+      border-bottom: none;
+    }
+
+    .chat-title {
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .chat-date {
+      font-size: 12px;
+      color: var(--text-light);
+    }
+
+    .messages-container {
+      max-height: 600px;
+      overflow-y: auto;
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      background-color: var(--bg-light);
+    }
+
+    .message {
+      margin: 16px;
+      position: relative;
+    }
+
+    .message-content {
+      padding: 12px 16px;
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+    }
+
+    .message.user .message-content {
+      background-color: #f0f9ff;
+      margin-right: 40px;
+    }
+
+    .message.model .message-content {
+      background-color: var(--bg-color);
+      margin-left: 40px;
+    }
+
+    .message-header {
+      font-size: 12px;
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+
+    .user .message-header {
+      color: #1d4ed8;
+    }
+
+    .model .message-header {
+      color: #047857;
+      text-align: right;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .badge-primary {
+      background-color: var(--primary-light);
+      color: var(--primary-color);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background-color: var(--bg-color);
+      border-radius: var(--border-radius);
+      box-shadow: var(--shadow-lg);
+      width: 100%;
+      max-width: 500px;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 16px;
+      background-color: var(--bg-light);
+      border-bottom: 1px solid var(--border-color);
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-body {
+      padding: 16px;
+    }
+
+    .modal-footer {
+      padding: 16px;
+      background-color: var(--bg-light);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .close-button {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--text-light);
+    }
+
+    .close-button:hover {
+      color: var(--text-color);
+    }
+
+    .section {
+      margin-bottom: 32px;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text-color);
+    }
+
+    .breadcrumb {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .breadcrumb-item {
+      color: var(--text-light);
+    }
+
+    .breadcrumb-item a {
+      color: var(--primary-color);
+      text-decoration: none;
+    }
+
+    .breadcrumb-item a:hover {
+      text-decoration: underline;
+    }
+
+    .breadcrumb-separator {
+      color: var(--text-light);
+    }
+
+    .back-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--primary-color);
+      text-decoration: none;
+      margin-bottom: 16px;
+      font-weight: 500;
+    }
+
+    .back-button:hover {
+      text-decoration: underline;
+    }
+
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 12px 16px;
+      background-color: var(--bg-color);
+      border-radius: var(--border-radius);
+      box-shadow: var(--shadow-md);
+      z-index: 1000;
+      max-width: 300px;
+      opacity: 0;
+      transform: translateY(-20px);
+      transition: opacity 0.3s, transform 0.3s;
+    }
+
+    .notification.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .notification-success {
+      border-left: 4px solid var(--success-color);
+    }
+
+    .notification-error {
+      border-left: 4px solid var(--danger-color);
+    }
+
+    .loading {
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .spinner {
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      border-left: 4px solid var(--primary-color);
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- ログイン画面 -->
+    <div class="login-container" v-if="!isLoggedIn">
+      <h1 class="title" style="margin-bottom: 24px;">管理者ログイン</h1>
+      <div class="alert alert-danger" v-if="loginError">{{ loginError }}</div>
+      <div class="form-group">
+        <label for="password">管理者パスワード</label>
+        <input type="password" id="password" v-model="adminPassword" class="form-control" @keyup.enter="login">
+      </div>
+      <button class="btn" @click="login">ログイン</button>
+    </div>
+
+    <!-- メイン管理画面 -->
+    <div class="container" v-else>
+      <div class="header">
+        <h1 class="title">Gemini管理ページ</h1>
+        <button class="btn btn-secondary" @click="logout">ログアウト</button>
+      </div>
+
+      <!-- ユーザー一覧セクション -->
+      <div class="section" v-if="!selectedUser && !viewingChat">
+        <h2 class="section-title">ユーザー一覧</h2>
+        <div class="card">
+          <div class="card-body">
+            <div class="loading" v-if="loading">
+              <div class="spinner"></div>
+            </div>
+            <ul class="user-list" v-else>
+              <li class="user-item" v-for="user in users" :key="user">
+                <span>{{ user }}</span>
+                <div class="user-actions">
+                  <button class="btn user-button" @click="viewUserChats(user)">
+                    <i class="fas fa-history"></i> チャット履歴
+                  </button>
+                  <button class="btn user-button" @click="showResetPasswordModal(user)">
+                    <i class="fas fa-key"></i> パスワードリセット
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ユーザーチャット一覧セクション -->
+      <div class="section" v-if="selectedUser && !viewingChat">
+        <div class="breadcrumb">
+          <span class="breadcrumb-item"><a href="#" @click="backToUserList">ユーザー一覧</a></span>
+          <span class="breadcrumb-separator">/</span>
+          <span class="breadcrumb-item">{{ selectedUser }}のチャット履歴</span>
+        </div>
+
+        <h2 class="section-title">{{ selectedUser }}のチャット履歴</h2>
+        <div class="card">
+          <div class="card-body">
+            <div class="loading" v-if="loading">
+              <div class="spinner"></div>
+            </div>
+            <div v-else-if="userChats.length === 0" style="text-align: center; padding: 20px;">
+              チャット履歴がありません
+            </div>
+            <ul class="chat-list" v-else>
+              <li class="chat-item" v-for="chat in userChats" :key="chat.id" @click="viewChatMessages(chat)">
+                <div class="chat-title">{{ chat.title }}</div>
+                <div class="chat-date">{{ formatDate(chat.id) }}</div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- チャットメッセージ表示セクション -->
+      <div class="section" v-if="viewingChat">
+        <div class="breadcrumb">
+          <span class="breadcrumb-item"><a href="#" @click="backToUserList">ユーザー一覧</a></span>
+          <span class="breadcrumb-separator">/</span>
+          <span class="breadcrumb-item"><a href="#" @click="backToUserChats">{{ selectedUser }}のチャット履歴</a></span>
+          <span class="breadcrumb-separator">/</span>
+          <span class="breadcrumb-item">{{ viewingChat.title }}</span>
+        </div>
+
+        <h2 class="section-title">{{ viewingChat.title }}</h2>
+        <div class="card">
+          <div class="card-body">
+            <div class="loading" v-if="loading">
+              <div class="spinner"></div>
+            </div>
+            <div class="messages-container" v-else>
+              <div v-for="(message, index) in chatMessages" :key="index" :class="['message', message.role]">
+                <div class="message-header">
+                  {{ message.role === 'user' ? selectedUser : 'Model' }} - {{ formatDate(message.timestamp) }}
+                </div>
+                <div class="message-content">{{ message.content }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- パスワードリセットモーダル -->
+    <div class="modal" v-if="showPasswordModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>{{ modalUser }}のパスワードリセット</h3>
+          <button class="close-button" @click="showPasswordModal = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-danger" v-if="modalError">{{ modalError }}</div>
+          <div class="form-group">
+            <label for="new-password">新しいパスワード</label>
+            <input type="password" id="new-password" v-model="newPassword" class="form-control">
+          </div>
+          <div class="form-group">
+            <label for="confirm-password">パスワード（確認）</label>
+            <input type="password" id="confirm-password" v-model="confirmPassword" class="form-control">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="showPasswordModal = false">キャンセル</button>
+          <button class="btn" @click="resetPassword">リセット</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 通知 -->
+    <div :class="['notification', 'notification-' + notificationType, { 'show': showNotification }]">
+      {{ notificationMessage }}
+    </div>
+  </div>
+  <script src="(( url_for('static', filename='libs/vue/3.5.13/vue.global.prod.min.js') ))"></script>
+	<script src="(( url_for('static', filename='admin.js') ))"></script>
+</body>
+</html>

@@ -783,14 +783,37 @@ createApp({
       showToast.value = false;
     };
     
-    // マークダウンのレンダリング（コードコピーボタン付き）
+		// マークダウンのレンダリング（コードコピーボタン付き）
 		const renderMarkdown = (content) => {
 			if (!content) return '';
 			
-			// 手順1: マークダウン内のコードブロックを一時的にエスケープ
+			// 手順1: マークダウン内のコードブロックを一時的にエスケープし、オリジナルのコードを保存
 			const codeBlocks = [];
-			let processedContent = content.replace(/```([\s\S]*?)```/g, (match) => {
+			const originalCodeContents = []; // オリジナルのコード内容を保存
+			
+			let processedContent = content.replace(/```([\s\S]*?)```/g, (match, codeContent) => {
 				const id = `CODE_BLOCK_${codeBlocks.length}`;
+				
+				// コードブロックの言語を抽出（最初の行）
+				let language = 'plaintext';
+				let actualCode = codeContent;
+				
+				// 最初の行が言語指定を含むか確認
+				const firstLineBreak = codeContent.indexOf('\n');
+				if (firstLineBreak > 0) {
+					const possibleLang = codeContent.substring(0, firstLineBreak).trim();
+					if (possibleLang && !possibleLang.includes(' ')) {
+						language = possibleLang;
+						actualCode = codeContent.substring(firstLineBreak + 1);
+					}
+				}
+				
+				// オリジナルのコード内容を保存（言語指定を除く）
+				originalCodeContents.push({
+					code: actualCode.trim(),
+					language: language
+				});
+				
 				codeBlocks.push(match);
 				return id;
 			});
@@ -857,10 +880,19 @@ createApp({
 			});
 			
 			// 手順8: コードブロックに言語ラベルとコピーボタンを追加
+			// ここでオリジナルのコードコンテンツを使用
+			let codeBlockIndex = 0;
 			html = html.replace(/<pre><code class="language-([^"]*)">([\s\S]*?)<\/code><\/pre>/g, (match, language, code) => {
-				const escapedCode = encodeURIComponent(code);
-				const displayLang = language === 'plaintext' ? 'Text' : language.toUpperCase();
-				return `<pre data-language="${displayLang}"><code class="language-${language}">${code}</code><button class="code-copy-btn" onclick="copyToClipboard(this, '${escapedCode}')"><i class="fas fa-copy"></i> コピー</button></pre>`;
+				// オリジナルのコードを取得（保存された順番で取得）
+				if (codeBlockIndex < originalCodeContents.length) {
+					const originalCode = originalCodeContents[codeBlockIndex].code;
+					const escapedOriginalCode = encodeURIComponent(originalCode);
+					const displayLang = language === 'plaintext' ? 'Text' : language.toUpperCase();
+					codeBlockIndex++;
+					
+					return `<pre data-language="${displayLang}"><code class="language-${language}">${code}</code><button class="code-copy-btn" onclick="copyToClipboard(this, '${escapedOriginalCode}')"><i class="fas fa-copy"></i> コピー</button></pre>`;
+				}
+				return match; // フォールバック: 何かがおかしい場合は元のマッチを返す
 			});
 			
 			// 手順9: 画像をクリック可能にする（lightbox風の機能）

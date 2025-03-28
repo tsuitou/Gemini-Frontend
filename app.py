@@ -51,7 +51,7 @@ google_search_tool = Tool(
 MODELS = os.environ.get("MODELS", "").split(",")
 SYSTEM_INSTRUCTION = os.environ.get("SYSTEM_INSTRUCTION")
 VERSION = os.environ.get("VERSION")
-
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
 # -----------------------------------------------------------
 # 2) SQLite 用の初期設定
@@ -67,6 +67,12 @@ def init_db():
         username TEXT PRIMARY KEY,
         password TEXT,
         auto_login_token TEXT
+    )
+    """)
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS admin_sessions (
+        session_id TEXT PRIMARY KEY,
+        created_at INTEGER
     )
     """)
     conn.commit()
@@ -289,52 +295,75 @@ def get_username_from_token(token):
 # -----------------------------------------------------------
 def load_past_chats(user_dir):
     past_chats_file = os.path.join(user_dir, "past_chats_list")
-    lock_file = past_chats_file + ".lock"  # ロック用ファイル(.lock)
-    # withブロックを抜けるまでロックが保持される
-    with FileLock(lock_file):
+    lock_file = past_chats_file + ".lock"
+    lock = FileLock(lock_file, timeout=10)  # タイムアウトを10秒に設定
+    try:
+        lock.acquire()
         try:
             past_chats = joblib.load(past_chats_file)
         except Exception:
             past_chats = {}
-    return past_chats
+        return past_chats
+    finally:
+        lock.release()  # 例外が発生してもロックを確実に解除
 
 def save_past_chats(user_dir, past_chats):
     past_chats_file = os.path.join(user_dir, "past_chats_list")
     lock_file = past_chats_file + ".lock"
-    with FileLock(lock_file):
+    lock = FileLock(lock_file, timeout=10)
+    try:
+        lock.acquire()
         joblib.dump(past_chats, past_chats_file)
+    finally:
+        lock.release()
 
 def load_chat_messages(user_dir, chat_id):
     messages_file = os.path.join(user_dir, f"{chat_id}-st_messages")
     lock_file = messages_file + ".lock"
-    with FileLock(lock_file):
+    lock = FileLock(lock_file, timeout=10)
+    try:
+        lock.acquire()
         try:
             messages = joblib.load(messages_file)
         except Exception:
             messages = []
-    return messages
+        return messages
+    finally:
+        lock.release()
 
 def save_chat_messages(user_dir, chat_id, messages):
     messages_file = os.path.join(user_dir, f"{chat_id}-st_messages")
     lock_file = messages_file + ".lock"
-    with FileLock(lock_file):
+    lock = FileLock(lock_file, timeout=10)
+    try:
+        lock.acquire()
         joblib.dump(messages, messages_file)
+    finally:
+        lock.release()
 
 def load_gemini_history(user_dir, chat_id):
     history_file = os.path.join(user_dir, f"{chat_id}-gemini_messages")
     lock_file = history_file + ".lock"
-    with FileLock(lock_file):
+    lock = FileLock(lock_file, timeout=10)
+    try:
+        lock.acquire()
         try:
             history = joblib.load(history_file)
         except Exception:
             history = []
-    return history
+        return history
+    finally:
+        lock.release()
 
 def save_gemini_history(user_dir, chat_id, history):
     history_file = os.path.join(user_dir, f"{chat_id}-gemini_messages")
     lock_file = history_file + ".lock"
-    with FileLock(lock_file):
+    lock = FileLock(lock_file, timeout=10)
+    try:
+        lock.acquire()
         joblib.dump(history, history_file)
+    finally:
+        lock.release()
 
 def delete_chat(user_dir, chat_id):
     try:
@@ -342,9 +371,23 @@ def delete_chat(user_dir, chat_id):
         messages = load_chat_messages(user_dir, chat_id)
         # 画像ファイルを削除
         delete_chat_images(messages)
+
+        file_st_messages = os.path.join(user_dir, f"{chat_id}-st_messages")
+        if os.path.exists(file_st_messages):
+            os.remove(file_st_messages)
+
+        file_gemini_messages = os.path.join(user_dir, f"{chat_id}-gemini_messages")
+        if os.path.exists(file_gemini_messages):
+            os.remove(file_gemini_messages)
+
+        lock_file_message = os.path.join(user_dir, f"{chat_id}-st_messages.lock")
+        if os.path.exists(lock_file_message):
+            os.remove(lock_file_message)
+
+        lock_file_gemini = os.path.join(user_dir, f"{chat_id}-gemini_messages.lock")
+        if os.path.exists(lock_file_gemini):
+            os.remove(lock_file_gemini)
         
-        os.remove(os.path.join(user_dir, f"{chat_id}-st_messages"))
-        os.remove(os.path.join(user_dir, f"{chat_id}-gemini_messages"))
     except FileNotFoundError:
         pass
     past_chats = load_past_chats(user_dir)
@@ -469,7 +512,7 @@ def fix_comprehensive_history(comprehensive_history):
 # -----------------------------------------------------------
 # 5) Flask ルートと SocketIO イベント
 # -----------------------------------------------------------
-@app.route("/")
+@app.route("/gemini/")
 def index():
     return render_template("index.html")
 
@@ -1212,7 +1255,157 @@ def handle_toggle_bookmark(data):
         emit("history_list", {"history": past_chats})
 
 # -----------------------------------------------------------
-# 6) メイン実行
+# 7) 管理
+# -----------------------------------------------------------
+# 管理者ページ
+@app.route("/gemini-admin/")
+def admin_page():
+    return render_template("admin.html")
+
+# 管理者認証
+@app.route("/gemini-admin/auth", methods=["POST"])
+def admin_auth():
+    if not ADMIN_PASSWORD:
+        return jsonify({"status": "error", "message": "管理者パスワードが設定されていません。"}), 403
+    
+    password = request.json.get("password")
+    if not password:
+        return jsonify({"status": "error", "message": "パスワードを入力してください。"}), 400
+    
+    if password == ADMIN_PASSWORD:
+        # 認証成功
+        session_id = hashlib.sha256(os.urandom(24)).hexdigest()
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        # 古いセッションをクリーンアップ（24時間以上前）
+        c.execute("DELETE FROM admin_sessions WHERE created_at < ?", (int(time.time()) - 86400,))
+        # 新しいセッションを追加
+        c.execute("INSERT INTO admin_sessions (session_id, created_at) VALUES (?, ?)", 
+                 (session_id, int(time.time())))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "session_id": session_id})
+    else:
+        return jsonify({"status": "error", "message": "パスワードが正しくありません。"}), 401
+
+# 管理者セッション検証
+def verify_admin_session(session_id):
+    if not session_id:
+        return False
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT session_id FROM admin_sessions WHERE session_id = ?", (session_id,))
+    row = c.fetchone()
+    conn.close()
+    
+    return row is not None
+
+# ユーザー一覧取得
+@app.route("/gemini-admin/users", methods=["GET"])
+def get_users():
+    session_id = request.headers.get("X-Admin-Session")
+    if not verify_admin_session(session_id):
+        return jsonify({"status": "error", "message": "管理者認証が必要です。"}), 401
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT username FROM accounts ORDER BY username")
+    users = [row[0] for row in c.fetchall()]
+    conn.close()
+    
+    return jsonify({"status": "success", "users": users})
+
+# パスワードリセット
+@app.route("/gemini-admin/reset-password", methods=["POST"])
+def reset_password():
+    session_id = request.headers.get("X-Admin-Session")
+    if not verify_admin_session(session_id):
+        return jsonify({"status": "error", "message": "管理者認証が必要です。"}), 401
+    
+    username = request.json.get("username")
+    new_password = request.json.get("password")
+    
+    if not username or not new_password:
+        return jsonify({"status": "error", "message": "ユーザー名とパスワードが必要です。"}), 400
+    
+    # パスワードハッシュの再計算
+    hashed_pw = hash_password(new_password)
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE accounts SET password = ? WHERE username = ?", (hashed_pw, username))
+    if c.rowcount == 0:
+        conn.close()
+        return jsonify({"status": "error", "message": "ユーザーが見つかりません。"}), 404
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"status": "success", "message": f"{username}のパスワードをリセットしました。"})
+
+# ユーザーのチャット一覧取得
+@app.route("/gemini-admin/user-chats", methods=["GET"])
+def get_user_chats():
+    session_id = request.headers.get("X-Admin-Session")
+    if not verify_admin_session(session_id):
+        return jsonify({"status": "error", "message": "管理者認証が必要です。"}), 401
+    
+    username = request.args.get("username")
+    if not username:
+        return jsonify({"status": "error", "message": "ユーザー名が必要です。"}), 400
+    
+    user_dir = get_user_dir(username)
+    try:
+        past_chats = load_past_chats(user_dir)
+        # チャットIDでソート（新しい順）
+        sorted_chats = sorted(
+            [{"id": k, **v} for k, v in past_chats.items()],
+            key=lambda x: float(x["id"]),
+            reverse=True
+        )
+        return jsonify({"status": "success", "chats": sorted_chats})
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"チャット一覧の取得に失敗しました: {str(e)}"}), 500
+
+# チャットメッセージの取得
+@app.route("/gemini-admin/chat-messages", methods=["GET"])
+def get_chat_messages():
+    session_id = request.headers.get("X-Admin-Session")
+    if not verify_admin_session(session_id):
+        return jsonify({"status": "error", "message": "管理者認証が必要です。"}), 401
+    
+    username = request.args.get("username")
+    chat_id = request.args.get("chat_id")
+    
+    if not username or not chat_id:
+        return jsonify({"status": "error", "message": "ユーザー名とチャットIDが必要です。"}), 400
+    
+    user_dir = get_user_dir(username)
+    try:
+        messages = load_chat_messages(user_dir, chat_id)
+        return jsonify({"status": "success", "messages": messages})
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"メッセージの取得に失敗しました: {str(e)}"}), 500
+
+# セッションログアウト
+@app.route("/gemini-admin/logout", methods=["POST"])
+def admin_logout():
+    session_id = request.headers.get("X-Admin-Session")
+    if not session_id:
+        return jsonify({"status": "success"})
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM admin_sessions WHERE session_id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"status": "success"})
+
+
+# -----------------------------------------------------------
+# 7) メイン実行
 # -----------------------------------------------------------
 if __name__ == "__main__":
     # SQLite初期化
