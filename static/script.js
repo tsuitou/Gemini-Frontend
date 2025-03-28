@@ -263,11 +263,13 @@ createApp({
     // 新規チャットの作成
     const createNewChat = () => {
 			isGenerating.value = false;
+			cancelEditMessage();
       socket.emit('new_chat', { token: token.value });
     };
     
     // チャットの読み込み
     const loadChat = (chatId) => {
+			cancelEditMessage();
       currentChatId.value = chatId;
       socket.emit('load_chat', { token: token.value, chat_id: chatId });
     };
