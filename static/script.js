@@ -16,8 +16,11 @@ const md = window.markdownit({
 });
 
 // コードコピー機能のグローバル関数
-window.copyToClipboard = function(button, code) {
-  const decodedCode = decodeURIComponent(code);
+window.copyToClipboard = function(button) {
+  // data-code 属性からコードを取得
+  const encodedCode = button.getAttribute('data-code');
+  const decodedCode = decodeURIComponent(encodedCode);
+  
   navigator.clipboard.writeText(decodedCode)
     .then(() => {
       const originalText = button.innerHTML;
@@ -892,7 +895,7 @@ createApp({
 					const displayLang = language === 'plaintext' ? 'Text' : language.toUpperCase();
 					codeBlockIndex++;
 					
-					return `<pre data-language="${displayLang}"><code class="language-${language}">${code}</code><button class="code-copy-btn" onclick="copyToClipboard(this, '${escapedOriginalCode}')"><i class="fas fa-copy"></i> コピー</button></pre>`;
+					return `<pre data-language="${displayLang}"><code class="language-${language}">${code}</code><button class="code-copy-btn" data-code="${escapedOriginalCode}" onclick="copyToClipboard(this)"><i class="fas fa-copy"></i> コピー</button></pre>`;
 				}
 				return match; // フォールバック: 何かがおかしい場合は元のマッチを返す
 			});
