@@ -536,7 +536,8 @@ def handle_get_model_list():
     api_models = client.models.list()
     api_model_names = [m.name for m in api_models]
     combined_models = sorted(set(api_model_names + [m.strip() for m in MODELS if m.strip()]))
-    emit("model_list", {"models": combined_models})
+    filtered_models = [model for model in combined_models if "gemini" in model]
+    emit("model_list", {"models": filtered_models})
 
 @socketio.on("cancel_stream")
 def handle_cancel_stream(data):
