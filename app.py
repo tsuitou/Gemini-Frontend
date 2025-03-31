@@ -639,7 +639,7 @@ def handle_resend_message(data):
         messages = messages[:message_index + 1]
         
     # Gemini履歴を取得
-    gemini_history = fix_comprehensive_history(load_gemini_history(user_dir, chat_id))
+    gemini_history = load_gemini_history(user_dir, chat_id)
     
     # 対象のユーザーメッセージを特定し格納
     target_user_messages = sum(1 for msg in messages if msg["role"] == "user")
@@ -721,7 +721,7 @@ def handle_resend_message(data):
                     is_valid=False 
                 )
                 save_chat_messages(user_dir, chat_id, messages)
-                save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
+                save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
                 emit("stream_cancelled", {"chat_id": chat_id})
                 return
 
@@ -814,7 +814,7 @@ def handle_resend_message(data):
 
         # Gemini履歴を保存
         save_chat_messages(user_dir, chat_id, messages)
-        save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
+        save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
         emit("gemini_response_complete", {"chat_id": chat_id})
         # 再送信完了通知
         emit("message_resent", {"index": message_index})
@@ -830,7 +830,7 @@ def handle_resend_message(data):
                 is_valid=False 
             )
             save_chat_messages(user_dir, chat_id, messages)
-            save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
+            save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
         emit("gemini_response_error", {"error": str(e), "chat_id": chat_id})
     finally:
         # 応答処理終了後にキャンセルフラグを削除
@@ -859,7 +859,7 @@ def handle_message(data):
 
     user_dir = get_user_dir(username)
     messages = load_chat_messages(user_dir, chat_id)
-    gemini_history = fix_comprehensive_history(load_gemini_history(user_dir, chat_id))
+    gemini_history = load_gemini_history(user_dir, chat_id)
 
     # 新規チャットの場合、past_chats にタイトルを登録
     past_chats = load_past_chats(user_dir)
@@ -941,7 +941,7 @@ def handle_message(data):
         chat = client.chats.create(model=model_name, history=gemini_history, config=configs)
         #履歴用
         input_content = t.t_content(chat._modules._api_client, contents)
-
+        
         full_response = ""
         usage_metadata = None
         formatted_metadata = ""
@@ -968,7 +968,7 @@ def handle_message(data):
                     is_valid=False 
                 )
                 save_chat_messages(user_dir, chat_id, messages)
-                save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
+                save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
                 emit("stream_cancelled", {"chat_id": chat_id})
                 return
 
@@ -1061,7 +1061,7 @@ def handle_message(data):
 
         # Gemini履歴を保存
         save_chat_messages(user_dir, chat_id, messages)
-        save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
+        save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
         emit("gemini_response_complete", {"chat_id": chat_id})
 
     except Exception as e:
@@ -1075,7 +1075,7 @@ def handle_message(data):
                 is_valid=False 
             )
             save_chat_messages(user_dir, chat_id, messages)
-            save_gemini_history(user_dir, chat_id, chat.get_history(curated=False))
+            save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
         emit("gemini_response_error", {"error": str(e), "chat_id": chat_id})
     finally:
         # 応答処理終了後にキャンセルフラグを削除
@@ -1165,6 +1165,90 @@ def handle_edit_message(data):
         emit("message_edited", {"index": message_index, "new_text": new_text})
     else:
         emit("error", {"message": "該当するメッセージが見つかりません"})
+
+@socketio.on("edit_model_message")
+def handle_edit_model_message(data):
+    token = data.get("token")
+    username = get_username_from_token(token)
+    if not username:
+        emit("error", {"message": "認証エラー"})
+        return
+    
+    chat_id = data.get("chat_id")
+    message_index = data.get("message_index")
+    new_text = data.get("new_text")
+    
+    user_dir = get_user_dir(username)
+    messages = load_chat_messages(user_dir, chat_id)
+    
+    # モデルメッセージかチェック
+    if message_index >= len(messages) or messages[message_index]["role"] != "model":
+        emit("error", {"message": "編集できるのはモデルメッセージのみです"})
+        return
+    
+    # メッセージの内容を更新（st_messagesの内容更新）
+    messages[message_index]["content"] = new_text
+    
+    # 変更を保存
+    save_chat_messages(user_dir, chat_id, messages)
+    
+    # gemini_historyの対応するメッセージを探して更新
+    gemini_history = load_gemini_history(user_dir, chat_id)
+    
+    # 現在のメッセージ位置までのユーザーメッセージ数をカウント
+    user_message_count = sum(1 for i, msg in enumerate(messages) if msg["role"] == "user" and i < message_index)
+    
+    # 対応するモデルメッセージを探す
+    model_found = False
+    user_count = 0
+    
+    for idx, content in enumerate(gemini_history):
+        if content.role == "user":
+            user_count += 1
+            
+        # 対象のユーザーメッセージの後の最初のモデル応答を見つけたら
+        if content.role == "model" and user_count == user_message_count:
+            model_found = True
+            
+            try:
+                # テキストを持つパートを見つける
+                text_parts = []
+                for part in content.parts:
+                    if hasattr(part, 'text') and part.text is not None and part.text != "":
+                        text_parts.append(part)
+                
+                # テキストパートが見つかった場合
+                if text_parts:
+                    # 最後のテキストパート以外のすべてのテキストをNoneに設定
+                    for i in range(len(text_parts) - 1):
+                        text_parts[i].text = None
+                    
+                    # 最後のテキストパートに新しいテキストを設定
+                    text_parts[-1].text = new_text
+                else:
+                    # テキストパートが見つからない場合、最初のパートにテキストを追加（可能な場合）
+                    if hasattr(content, 'parts') and len(content.parts) > 0:
+                        if hasattr(content.parts[0], 'text'):
+                            content.parts[0].text = new_text
+                
+                # fix_comprehensive_historyを呼び出して空のパートを削除
+                gemini_history = fix_comprehensive_history(gemini_history)
+            except Exception as e:
+                print(f"モデルメッセージ編集エラー: {str(e)}")
+                emit("error", {"message": f"モデルメッセージの編集に失敗しました: {str(e)}"})
+                return
+            
+            break
+    
+    if not model_found:
+        emit("error", {"message": "対応するモデルメッセージが見つかりませんでした"})
+        return
+    
+    # 変更したgemini_historyを保存
+    save_gemini_history(user_dir, chat_id, gemini_history)
+    
+    # クライアントに編集成功を通知
+    emit("model_message_edited", {"index": message_index, "new_text": new_text})
 
 @socketio.on("get_history_list")
 def handle_get_history_list(data):

@@ -197,7 +197,6 @@
                   <div class="message-actions" v-if="editingMessageId !== index">
 										</button>
                     <button 
-                      v-if="message.role === 'user'" 
                       class="message-action-btn"
                       @click="startEditMessage(index, message)"
                       title="メッセージを編集"

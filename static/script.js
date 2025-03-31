@@ -497,7 +497,8 @@ createApp({
     
     // メッセージの編集モードを開始
 		const startEditMessage = (index, message) => {
-			if (message.role !== 'user' || isGenerating.value) return;
+			// ユーザーメッセージ「または」モデルメッセージの編集を許可
+			if ((message.role !== 'user' && message.role !== 'model') || isGenerating.value) return;
 			
 			// 編集中のメッセージを設定
 			editingMessageId.value = index;
@@ -517,38 +518,51 @@ createApp({
 				}
 			});
 		};
+
+		// 2. saveEditMessage関数を変更：メッセージタイプによって適切なイベントを送信
+		const saveEditMessage = (index) => {
+			if (!editingMessageText.value.trim()) {
+				showToastMessage('メッセージを入力してください');
+				return;
+			}
+			
+			const messageRole = currentChat.value.messages[index].role;
+			
+			if (messageRole === 'user') {
+				socket.emit('edit_message', {
+					token: token.value,
+					chat_id: currentChatId.value,
+					message_index: index,
+					new_text: editingMessageText.value
+				});
+				
+				// エディタを閉じる
+				editingMessageId.value = null;
+				editingMessageText.value = '';
+				
+			} else if (messageRole === 'model') {
+				socket.emit('edit_model_message', {
+					token: token.value,
+					chat_id: currentChatId.value,
+					message_index: index,
+					new_text: editingMessageText.value
+				});
+				
+				// ローカルUIを先に更新（オプティミスティックUI更新）
+				if (currentChat.value && currentChat.value.messages && index < currentChat.value.messages.length) {
+					currentChat.value.messages[index].content = editingMessageText.value;
+				}
+				
+				// 編集モードを終了
+				editingMessageId.value = null;
+				editingMessageText.value = '';
+			}
+		};
     
     // メッセージ編集をキャンセル
     const cancelEditMessage = () => {
       editingMessageId.value = null;
       editingMessageText.value = '';
-    };
-    
-    // 編集したメッセージを保存
-    const saveEditMessage = (index) => {
-      if (!editingMessageText.value.trim()) {
-        showToastMessage('メッセージを入力してください');
-        return;
-      }
-      
-      socket.emit('edit_message', {
-        token: token.value,
-        chat_id: currentChatId.value,
-        message_index: index,
-        new_text: editingMessageText.value
-      });
-      
-      // ローカルUIを先に更新（オプティミスティックUI更新）
-      if (currentChat.value && currentChat.value.messages && index < currentChat.value.messages.length) {
-        currentChat.value.messages[index].content = editingMessageText.value;
-      }
-      
-      // 編集モードを終了
-      editingMessageId.value = null;
-      editingMessageText.value = '';
-      
-      // メッセージを再送信して新しい応答を生成
-      resendMessage(index);
     };
     
     // メッセージの再送信（再生成）
@@ -1411,6 +1425,13 @@ const handleDrop = (event) => {
       }
     });
     
+		// モデルメッセージ編集完了イベント
+		socket.on('model_message_edited', (data) => {
+			if (currentChat.value && currentChat.value.messages && data.index < currentChat.value.messages.length) {
+				currentChat.value.messages[data.index].content = data.new_text;
+			}
+		});
+		
     socket.on('message_resent', (data) => {
       // 再送信完了通知（必要に応じて処理）
     });
