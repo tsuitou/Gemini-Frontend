@@ -144,7 +144,8 @@ createApp({
     const isGenerating = ref(false);
     const groundingEnabled = ref(false);
     const codeExecutionEnabled = ref(false);
-	const imageGenerationEnabled = ref(false);
+		const imageGenerationEnabled = ref(false);
+		const streamEnabled = ref(true)
     
     // UI状態
     const searchQuery = ref('');
@@ -371,6 +372,7 @@ createApp({
 				grounding_enabled: groundingEnabled.value,
 				code_execution_enabled: codeExecutionEnabled.value,
 				image_generation_enabled: imageGenerationEnabled.value,
+				stream_enabled: streamEnabled.value,
 				files: [] // 複数ファイル情報を格納する配列
 			};
 			
@@ -580,7 +582,8 @@ createApp({
         model_name: selectedModel.value,
         grounding_enabled: groundingEnabled.value,
         code_execution_enabled: codeExecutionEnabled.value,
-		image_generation_enabled: imageGenerationEnabled.value,
+				image_generation_enabled: imageGenerationEnabled.value,
+				stream_enabled: streamEnabled.value,
       });
       
       // UIから以降のモデル応答を削除（ユーザーメッセージは保持）
@@ -1565,12 +1568,13 @@ const handleDrop = (event) => {
       toggleBookmark,
       
       // メッセージ関連
-	  copyMessageContent,
+			copyMessageContent,
       messageText,
       isGenerating,
       groundingEnabled,
       codeExecutionEnabled,
-	  imageGenerationEnabled,
+			imageGenerationEnabled,
+			streamEnabled,
       canSendMessage,
       sendMessage,
       startEditMessage,
@@ -1581,7 +1585,7 @@ const handleDrop = (event) => {
       cancelGeneration,
       toggleGroundingEnabled,
       toggleCodeExecution,
-	  toggleImageGeneration,
+			toggleImageGeneration,
       editingMessageId,
       editingMessageText,
       

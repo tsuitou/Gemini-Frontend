@@ -604,6 +604,343 @@ def upload_large_file():
             except Exception as rm_error:
                 print(f"一時ファイル削除エラー: {tmp_path}, エラー: {str(rm_error)}")
 
+def process_response(chat, contents, user_dir, chat_id, messages, username, model_name, sid=None, stream_enabled=True):
+    """
+    レスポンス処理を統一化する関数
+    
+    Args:
+        chat: Gemini チャットインスタンス
+        contents: 送信するコンテンツ
+        user_dir: ユーザーディレクトリ
+        chat_id: チャットID
+        messages: メッセージ履歴
+        username: ユーザー名
+        model_name: モデル名
+        sid: セッションID（ストリーミング時のキャンセル用）
+        stream_enabled: ストリーミングモードを有効にするかどうか
+    """
+    # 履歴用
+    input_content = t.t_content(chat._modules._api_client, contents)
+    
+    # モデルからの応答を追加するためのエントリを作成
+    model_message = {
+        "role": "model",
+        "content": "",
+        "timestamp": time.time()
+    }
+    messages.append(model_message)
+    
+    try:
+        full_response = ""
+        usage_metadata = None
+        formatted_metadata = ""
+        all_grounding_links = ""
+        all_grounding_queries = ""
+        
+        if stream_enabled:
+            # ストリーミングモード
+            for chunk in chat.send_message_stream(message=contents):
+                # キャンセル処理
+                if sid and cancellation_flags.get(sid):
+                    messages.pop()
+                    chat.record_history(
+                        user_input=input_content,
+                        model_output=[],
+                        automatic_function_calling_history=[],
+                        is_valid=False 
+                    )
+                    save_chat_messages(user_dir, chat_id, messages)
+                    save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
+                    emit("stream_cancelled", {"chat_id": chat_id})
+                    return False
+                
+                # メタデータの処理
+                if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                    usage_metadata = chunk.usage_metadata
+                
+                chunk_text = process_chunk(chunk, messages, username)
+                
+                # グラウンディング情報の処理
+                process_grounding(chunk, all_grounding_links, all_grounding_queries)
+                
+                if chunk_text:
+                    full_response += chunk_text
+                    # 最後のメッセージを更新
+                    messages[-1]["content"] += chunk_text
+                    # クライアントに通知
+                    emit("gemini_response_chunk", {"chunk": chunk_text, "chat_id": chat_id})
+        else:
+            # 非ストリーミングモード
+            response = chat.send_message(message=contents)
+            
+            # メタデータの処理
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                usage_metadata = response.usage_metadata
+            
+            # レスポンスの処理
+            response_text = process_chunk(response, messages, username)
+            
+            # グラウンディング情報の処理
+            process_grounding(response, all_grounding_links, all_grounding_queries)
+            
+            full_response = response_text
+            messages[-1]["content"] = response_text
+            # クライアントに通知（一度に全体を送信）
+            emit("gemini_response_chunk", {"chunk": response_text, "chat_id": chat_id})
+        
+        # トークン数情報の処理
+        if usage_metadata:
+            formatted_metadata = format_token_metadata(model_name, usage_metadata)
+            full_response += formatted_metadata
+            messages[-1]["content"] += formatted_metadata
+            emit("gemini_response_chunk", {"chunk": formatted_metadata, "chat_id": chat_id})
+        
+        # グラウンディング情報の整形と送信
+        grounding_metadata = format_grounding_metadata(all_grounding_links, all_grounding_queries)
+        if grounding_metadata:
+            full_response += grounding_metadata
+            messages[-1]["content"] += grounding_metadata
+            emit("gemini_response_chunk", {"chunk": grounding_metadata, "chat_id": chat_id})
+        
+        # Gemini履歴を保存
+        save_chat_messages(user_dir, chat_id, messages)
+        save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
+        emit("gemini_response_complete", {"chat_id": chat_id})
+        return True
+    
+    except Exception as e:
+        # エラー処理
+        if len(messages) > 0 and messages[-1]["role"] == "model":
+            messages.pop()
+            chat.record_history(
+                user_input=input_content,
+                model_output=[],
+                automatic_function_calling_history=[],
+                is_valid=False 
+            )
+            save_chat_messages(user_dir, chat_id, messages)
+            save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
+        emit("gemini_response_error", {"error": str(e), "chat_id": chat_id})
+        return False
+    finally:
+        # 処理終了後にキャンセルフラグを削除
+        if sid:
+            cancellation_flags.pop(sid, None)
+
+
+def process_chunk(chunk, messages, username):
+    """チャンクからテキストとイメージを抽出する"""
+    chunk_text = ""
+    
+    if hasattr(chunk, "candidates") and chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+        for part in chunk.candidates[0].content.parts:
+            if part.text:
+                chunk_text += part.text
+            if hasattr(part, 'executable_code') and part.executable_code:
+                chunk_text += f"\n**Executable Code**\n```Python\n{part.executable_code.code}\n```\n"
+            if hasattr(part, 'code_execution_result') and part.code_execution_result:
+                chunk_text += f"\n**Code Execution Result**\n```Python\n{part.code_execution_result}\n```\n"
+            if hasattr(chunk, 'thought') and chunk.thought:
+                chunk_text += f"\nThought:\n{chunk.thought}\n"
+            if hasattr(part, 'inline_data') and part.inline_data is not None:
+                try:
+                    mime = part.inline_data.mime_type
+                    data = part.inline_data.data
+                    
+                    # バイナリデータの場合は適切にBase64エンコード
+                    if isinstance(data, bytes):
+                        data = base64.b64encode(data).decode('utf-8')
+                    
+                    # 画像をファイルとして保存
+                    image_url = save_generated_image(username, data, mime)
+                    
+                    if image_url:
+                        # マークダウン形式の画像参照を追加
+                        chunk_text += f"\n![Generated Image]({image_url})\n"
+                        
+                        # 画像URLを記録（削除時に使用）
+                        if "images" not in messages[-1]:
+                            messages[-1]["images"] = []
+                        messages[-1]["images"].append(image_url)
+                    else:
+                        chunk_text += "\n[画像の保存に失敗しました]\n"
+                    
+                except Exception as img_error:
+                    print(f"画像処理エラー: {str(img_error)}")
+                    # エラーがあっても処理を続行
+                    chunk_text += "\n[画像の処理中にエラーが発生しました]\n"
+    
+    return chunk_text
+
+
+def process_grounding(chunk, all_grounding_links, all_grounding_queries):
+    """グラウンディング情報を抽出する"""
+    if hasattr(chunk, "candidates") and chunk.candidates:
+        candidate = chunk.candidates[0]
+        if hasattr(candidate, "grounding_metadata") and candidate.grounding_metadata:
+            metadata = candidate.grounding_metadata
+            if hasattr(metadata, "grounding_chunks") and metadata.grounding_chunks:
+                for i, grounding_chunk in enumerate(metadata.grounding_chunks):
+                    if hasattr(grounding_chunk, "web") and grounding_chunk.web:
+                        all_grounding_links += f"[{i + 1}][{grounding_chunk.web.title}]({grounding_chunk.web.uri}) "
+            if hasattr(metadata, "web_search_queries") and metadata.web_search_queries:
+                for query in metadata.web_search_queries:
+                    all_grounding_queries += f"{query} / "
+
+
+def format_token_metadata(model_name, usage_metadata):
+    """トークン数メタデータを整形する"""
+    return f"\n\n---\n**{model_name}**    Token: {usage_metadata.total_token_count:,}\n\n"
+
+
+def format_grounding_metadata(all_grounding_links, all_grounding_queries):
+    """グラウンディングメタデータを整形する"""
+    formatted_metadata = ""
+    
+    if all_grounding_queries:
+        all_grounding_queries = " / ".join(
+            sorted(set(all_grounding_queries.rstrip(" /").split(" / ")))
+        )
+    if all_grounding_links:
+        formatted_metadata += all_grounding_links + "\n"
+    if all_grounding_queries:
+        formatted_metadata += "\nQuery: " + all_grounding_queries + "\n"
+    
+    return formatted_metadata
+
+
+@socketio.on("send_message")
+def handle_message(data):
+    # キャンセルフラグをリセット
+    sid = request.sid
+    cancellation_flags[sid] = False
+
+    token = data.get("token")
+    username = get_username_from_token(token)
+    if not username:
+        emit("error", {"message": "認証エラー"})
+        return
+    
+    chat_id = data.get("chat_id")
+    model_name = data.get("model_name")
+    message = data.get("message")
+    grounding_enabled = data.get("grounding_enabled", False)
+    code_execution_enabled = data.get("code_execution_enabled", False)
+    image_generation_enabled = data.get("image_generation_enabled", False)
+    stream_enabled = data.get("stream_enabled", True)  # デフォルトはストリーミングモード
+    
+    # 複数ファイル情報を取得
+    files = data.get("files", [])
+
+    user_dir = get_user_dir(username)
+    messages = load_chat_messages(user_dir, chat_id)
+    gemini_history = load_gemini_history(user_dir, chat_id)
+
+    # 新規チャットの場合、past_chats にタイトルを登録
+    past_chats = load_past_chats(user_dir)
+    if chat_id not in past_chats:
+        chat_title = message[:30]
+        current_time = time.time()
+        past_chats[chat_id] = {"title": chat_title, "bookmarked": False, "lastUpdated": current_time}
+        save_past_chats(user_dir, past_chats)
+        emit("history_list", {"history": past_chats})
+
+    # ユーザーのプロンプトと添付ファイル情報を分離して履歴に追加
+    user_message = {
+        "role": "user",
+        "content": message,
+        "timestamp": time.time()
+    }
+    
+    # 添付ファイル情報があれば追加
+    if files:
+        attachments = []
+        for file_info in files:
+            attachment = {
+                "name": file_info.get("file_name"),
+                "type": file_info.get("file_mime_type"),
+                "file_id": file_info.get("file_id")
+            }
+            attachments.append(attachment)
+        user_message["attachments"] = attachments
+    
+    messages.append(user_message)
+    save_chat_messages(user_dir, chat_id, messages)
+    
+    try:
+        # コンテンツの作成 - 複数ファイル対応
+        contents = []
+        
+        # ファイル処理 - フロントエンドから送られた全ファイルを追加
+        for file_info in files:
+            file_id = file_info.get("file_id")
+            file_data_base64 = file_info.get("file_data")
+            file_name = file_info.get("file_name")
+            file_mime_type = file_info.get("file_mime_type")
+            
+            if file_id:
+                # File APIを使った大容量ファイル参照
+                file_ref = client.files.get(name=file_id)
+                contents.append(file_ref)
+            elif file_data_base64:
+                # Base64エンコードされた小さいファイル
+                file_data = base64.b64decode(file_data_base64)
+                file_part = types.Part.from_bytes(data=file_data, mime_type=file_mime_type)
+                contents.append(file_part)
+        
+        # メッセージテキストを最後に追加
+        contents.append(types.Part.from_text(text=message))
+        
+        # 構成設定
+        if grounding_enabled:
+            configs = GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                tools=[google_search_tool],
+                response_modalities=['Text']
+            )
+        elif code_execution_enabled:
+            configs = GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                tools=[code_execution_tool],
+                response_modalities=['Text']
+            )
+        elif image_generation_enabled:
+            configs = GenerateContentConfig(
+                response_modalities=['Text', 'Image']
+            )
+        else:
+            configs = GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                response_modalities=['Text']
+            )
+        
+        # チャット作成
+        chat = client.chats.create(model=model_name, history=gemini_history, config=configs)
+        
+        # 統一された応答処理関数を呼び出し
+        process_response(
+            chat=chat, 
+            contents=contents, 
+            user_dir=user_dir, 
+            chat_id=chat_id, 
+            messages=messages, 
+            username=username, 
+            model_name=model_name, 
+            sid=sid, 
+            stream_enabled=stream_enabled
+        )
+        
+    except Exception as e:
+        # エラー時の処理
+        if len(messages) > 0 and messages[-1]["role"] == "model":
+            messages.pop()
+        save_chat_messages(user_dir, chat_id, messages)
+        emit("gemini_response_error", {"error": str(e), "chat_id": chat_id})
+    finally:
+        # 応答処理終了後にキャンセルフラグを削除
+        cancellation_flags.pop(sid, None)
+
+
 @socketio.on("resend_message")
 def handle_resend_message(data):
     # キャンセルフラグをリセット
@@ -621,7 +958,8 @@ def handle_resend_message(data):
     model_name = data.get("model_name")
     grounding_enabled = data.get("grounding_enabled", False)
     code_execution_enabled = data.get("code_execution_enabled", False)
-    image_generation_enabled = data.get("image_generation_enabled", False)  # 新しいフラグ
+    image_generation_enabled = data.get("image_generation_enabled", False)
+    stream_enabled = data.get("stream_enabled", True)  # デフォルトはストリーミングモード
     
     user_dir = get_user_dir(username)
     messages = load_chat_messages(user_dir, chat_id)
@@ -693,389 +1031,28 @@ def handle_resend_message(data):
         # チャットインスタンスを作成（ユーザーメッセージを含まない履歴）
         chat = client.chats.create(model=model_name, history=truncated_history, config=configs)
         
-        # モデル応答用のモック要素を追加
-        model_message = {
-            "role": "model",
-            "content": "",
-            "timestamp": time.time()
-        }
-        messages.append(model_message)
-
-        full_response = ""
-        usage_metadata = None
-        formatted_metadata = ""
-        all_grounding_links = ""
-        all_grounding_queries = ""
-
-        #履歴用
-        input_content = t.t_content(chat._modules._api_client, user_message.parts)
-        # ユーザーメッセージのpartsを送信
-        for chunk in chat.send_message_stream(user_message.parts):
-            # クライアントがキャンセルをリクエストしたら中断
-            if cancellation_flags.get(sid):
-                messages.pop()
-                chat.record_history(
-                    user_input=input_content,
-                    model_output=[],
-                    automatic_function_calling_history=[],
-                    is_valid=False 
-                )
-                save_chat_messages(user_dir, chat_id, messages)
-                save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
-                emit("stream_cancelled", {"chat_id": chat_id})
-                return
-
-            if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
-                usage_metadata = chunk.usage_metadata
-
-            chunk_text = ""  # このチャンクのテキストを蓄積する変数
-
-            if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
-                for part in chunk.candidates[0].content.parts:
-                    if part.text:
-                        chunk_text += part.text
-                    if hasattr(part, 'executable_code') and part.executable_code:
-                        chunk_text += f"\n**Executable Code**\n```Python\n{part.executable_code.code}\n```\n"
-                    if hasattr(part, 'code_execution_result') and part.code_execution_result:
-                        chunk_text += f"\n**Code Execution Result**\n```Python\n{part.code_execution_result}\n```\n"
-                    if hasattr(chunk, 'thought') and chunk.thought:
-                         chunk_text += f"\nThought:\n{chunk.thought}\n"
-                    if hasattr(part, 'inline_data') and part.inline_data is not None:
-                        try:
-                            mime = part.inline_data.mime_type
-                            data = part.inline_data.data
-                            
-                            # バイナリデータの場合は適切にBase64エンコード
-                            if isinstance(data, bytes):
-                                data = base64.b64encode(data).decode('utf-8')
-                            
-                            # 画像をファイルとして保存
-                            image_url = save_generated_image(username, data, mime)
-                            
-                            if image_url:
-                                # マークダウン形式の画像参照を追加
-                                chunk_text += f"\n![Generated Image]({image_url})\n"
-                                
-                                # 画像URLを記録（削除時に使用）
-                                if "images" not in messages[-1]:
-                                    messages[-1]["images"] = []
-                                messages[-1]["images"].append(image_url)
-                            else:
-                                chunk_text += "\n[画像の保存に失敗しました]\n"
-                            
-                        except Exception as img_error:
-                            print(f"画像処理エラー: {str(img_error)}")
-                            # エラーがあっても処理を続行
-                            chunk_text += "\n[画像の処理中にエラーが発生しました]\n"
-
-            # グラウンディング処理
-            if hasattr(chunk, "candidates") and chunk.candidates:
-                candidate = chunk.candidates[0]
-                if hasattr(candidate, "grounding_metadata") and candidate.grounding_metadata:
-                    metadata = candidate.grounding_metadata
-                    if hasattr(metadata, "grounding_chunks") and metadata.grounding_chunks:
-                        for i, grounding_chunk in enumerate(metadata.grounding_chunks):
-                            if hasattr(grounding_chunk, "web") and grounding_chunk.web:
-                                all_grounding_links += f"[{i + 1}][{grounding_chunk.web.title}]({grounding_chunk.web.uri}) "
-                    if hasattr(metadata, "web_search_queries") and metadata.web_search_queries:
-                        for query in metadata.web_search_queries:
-                            all_grounding_queries += f"{query} / "
-
-            if chunk_text:
-                full_response += chunk_text
-                # 最後のメッセージを更新
-                messages[-1]["content"] += chunk_text
-                # クライアントに通知
-                emit("gemini_response_chunk", {"chunk": chunk_text, "chat_id": chat_id})
-
-        # トークン数情報を整形
-        if usage_metadata:
-            formatted_metadata = "\n\n---\n**" + model_name + "**    Token: " + f"{usage_metadata.total_token_count:,}" + "\n\n"
-            full_response += formatted_metadata
-            messages[-1]["content"] += formatted_metadata
-            emit("gemini_response_chunk", {"chunk": formatted_metadata, "chat_id": chat_id})
-            formatted_metadata = ""
-
-        # グラウンディング情報を整形して送信
-        if all_grounding_queries:
-            all_grounding_queries = " / ".join(
-                sorted(set(all_grounding_queries.rstrip(" /").split(" / ")))
-            )
-        if all_grounding_links:
-            formatted_metadata += all_grounding_links + "\n"
-        if all_grounding_queries:
-            formatted_metadata += "\nQuery: " + all_grounding_queries + "\n"
-
-        # 最後の応答にグラウンディング情報を追加
-        if formatted_metadata:
-            full_response += formatted_metadata
-            messages[-1]["content"] += formatted_metadata
-            emit("gemini_response_chunk", {"chunk": formatted_metadata, "chat_id": chat_id})
-
-        # Gemini履歴を保存
-        save_chat_messages(user_dir, chat_id, messages)
-        save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
-        emit("gemini_response_complete", {"chat_id": chat_id})
-        # 再送信完了通知
-        emit("message_resent", {"index": message_index})
+        # 統一された応答処理関数を呼び出し
+        success = process_response(
+            chat=chat, 
+            contents=user_message.parts, 
+            user_dir=user_dir, 
+            chat_id=chat_id, 
+            messages=messages, 
+            username=username, 
+            model_name=model_name, 
+            sid=sid, 
+            stream_enabled=stream_enabled
+        )
+        
+        # 成功した場合は再送信完了通知
+        if success:
+            emit("message_resent", {"index": message_index})
 
     except Exception as e:
         # エラー時は一時メッセージを削除して詳細なエラー情報を送信
         if len(messages) > 0 and messages[-1]["role"] == "model":
             messages.pop()
-            chat.record_history(
-                user_input=input_content,
-                model_output=[],
-                automatic_function_calling_history=[],
-                is_valid=False 
-            )
-            save_chat_messages(user_dir, chat_id, messages)
-            save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
-        emit("gemini_response_error", {"error": str(e), "chat_id": chat_id})
-    finally:
-        # 応答処理終了後にキャンセルフラグを削除
-        cancellation_flags.pop(sid, None)
-
-@socketio.on("send_message")
-def handle_message(data):
-    # キャンセルフラグをリセット
-    sid = request.sid
-    cancellation_flags[sid] = False
-
-    token = data.get("token")
-    username = get_username_from_token(token)
-    if not username:
-        emit("error", {"message": "認証エラー"})
-        return
-    chat_id = data.get("chat_id")
-    model_name = data.get("model_name")
-    message = data.get("message")
-    grounding_enabled = data.get("grounding_enabled", False)
-    code_execution_enabled = data.get("code_execution_enabled", False)
-    image_generation_enabled = data.get("image_generation_enabled", False)
-    
-    # 複数ファイル情報を取得
-    files = data.get("files", [])
-
-    user_dir = get_user_dir(username)
-    messages = load_chat_messages(user_dir, chat_id)
-    gemini_history = load_gemini_history(user_dir, chat_id)
-
-    # 新規チャットの場合、past_chats にタイトルを登録
-    past_chats = load_past_chats(user_dir)
-    if chat_id not in past_chats:
-        chat_title = message[:30]
-        current_time = time.time()
-        past_chats[chat_id] = {"title": chat_title, "bookmarked": False, "lastUpdated": current_time}
-        save_past_chats(user_dir, past_chats)
-        emit("history_list", {"history": past_chats})
-
-    # ユーザーのプロンプトと添付ファイル情報を分離して履歴に追加
-    user_message = {
-        "role": "user",
-        "content": message,
-        "timestamp": time.time()
-    }
-    
-    # 添付ファイル情報があれば追加
-    if files:
-        attachments = []
-        for file_info in files:
-            attachment = {
-                "name": file_info.get("file_name"),
-                "type": file_info.get("file_mime_type"),
-                "file_id": file_info.get("file_id")
-            }
-            attachments.append(attachment)
-        user_message["attachments"] = attachments
-    
-    messages.append(user_message)
-    save_chat_messages(user_dir, chat_id, messages)
-    
-    try:
-        # コンテンツの作成 - 複数ファイル対応
-        contents = []
-        
-        # ファイル処理 - フロントエンドから送られた全ファイルを追加
-        for file_info in files:
-            file_id = file_info.get("file_id")
-            file_data_base64 = file_info.get("file_data")
-            file_name = file_info.get("file_name")
-            file_mime_type = file_info.get("file_mime_type")
-            
-            if file_id:
-                # File APIを使った大容量ファイル参照
-                file_ref = client.files.get(name=file_id)
-                contents.append(file_ref)
-            elif file_data_base64:
-                # Base64エンコードされた小さいファイル
-                file_data = base64.b64decode(file_data_base64)
-                file_part = types.Part.from_bytes(data=file_data, mime_type=file_mime_type)
-                contents.append(file_part)
-        
-        # メッセージテキストを最後に追加
-        contents.append(types.Part.from_text(text=message))
-        
-
-        if grounding_enabled:
-            configs = GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                tools=[google_search_tool],
-                response_modalities=['Text']
-            )
-        elif code_execution_enabled:
-            configs = GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                tools=[code_execution_tool],
-                response_modalities=['Text']
-            )
-        elif image_generation_enabled:
-            configs = GenerateContentConfig(
-                response_modalities=['Text', 'Image']
-            )
-        else:
-            configs = GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                response_modalities=['Text']
-            )
-        chat = client.chats.create(model=model_name, history=gemini_history, config=configs)
-        #履歴用
-        input_content = t.t_content(chat._modules._api_client, contents)
-        
-        full_response = ""
-        usage_metadata = None
-        formatted_metadata = ""
-        all_grounding_links = ""
-        all_grounding_queries = ""
-
-        # モデルからの応答を追加するためのエントリを作成
-        model_message = {
-            "role": "model",
-            "content": "",  # ストリーミングで埋めていく
-            "timestamp": time.time()
-        }
-        messages.append(model_message)
-        
-        # ストリーミング応答開始
-        for chunk in chat.send_message_stream(message=contents):
-            # クライアントがキャンセルをリクエストしたら中断
-            if cancellation_flags.get(sid):
-                messages.pop()
-                chat.record_history(
-                    user_input=input_content,
-                    model_output=[],
-                    automatic_function_calling_history=[],
-                    is_valid=False 
-                )
-                save_chat_messages(user_dir, chat_id, messages)
-                save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
-                emit("stream_cancelled", {"chat_id": chat_id})
-                return
-
-            if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
-                usage_metadata = chunk.usage_metadata
-
-            chunk_text = ""  # このチャンクのテキストを蓄積する変数
-
-            if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
-                for part in chunk.candidates[0].content.parts:
-                    if part.text:
-                        chunk_text += part.text
-                    if hasattr(part, 'executable_code') and part.executable_code:
-                        chunk_text += f"\n**Executable Code**\n```Python\n{part.executable_code.code}\n```\n"
-                    if hasattr(part, 'code_execution_result') and part.code_execution_result:
-                        chunk_text += f"\n**Code Execution Result**\n```Python\n{part.code_execution_result}\n```\n"
-                    if hasattr(chunk, 'thought') and chunk.thought:
-                         chunk_text += f"\nThought:\n{chunk.thought}\n"
-                    if hasattr(part, 'inline_data') and part.inline_data is not None:
-                        try:
-                            mime = part.inline_data.mime_type
-                            data = part.inline_data.data
-                            
-                            # バイナリデータの場合は適切にBase64エンコード
-                            if isinstance(data, bytes):
-                                data = base64.b64encode(data).decode('utf-8')
-                            
-                            # 画像をファイルとして保存
-                            image_url = save_generated_image(username, data, mime)
-                            
-                            if image_url:
-                                # マークダウン形式の画像参照を追加
-                                chunk_text += f"\n![Generated Image]({image_url})\n"
-                                
-                                # 画像URLを記録（削除時に使用）
-                                if "images" not in messages[-1]:
-                                    messages[-1]["images"] = []
-                                messages[-1]["images"].append(image_url)
-                            else:
-                                chunk_text += "\n[画像の保存に失敗しました]\n"
-                            
-                        except Exception as img_error:
-                            print(f"画像処理エラー: {str(img_error)}")
-                            # エラーがあっても処理を続行
-                            chunk_text += "\n[画像の処理中にエラーが発生しました]\n"
-
-            # グラウンディング処理をここで行う
-            if hasattr(chunk, "candidates") and chunk.candidates:
-                candidate = chunk.candidates[0]
-                if hasattr(candidate, "grounding_metadata") and candidate.grounding_metadata:
-                    metadata = candidate.grounding_metadata
-                    if hasattr(metadata, "grounding_chunks") and metadata.grounding_chunks:
-                        for i, grounding_chunk in enumerate(metadata.grounding_chunks):
-                            if hasattr(grounding_chunk, "web") and grounding_chunk.web:
-                                all_grounding_links += f"[{i + 1}][{grounding_chunk.web.title}]({grounding_chunk.web.uri}) "
-                    if hasattr(metadata, "web_search_queries") and metadata.web_search_queries:
-                        for query in metadata.web_search_queries:
-                            all_grounding_queries += f"{query} / "
-
-            if chunk_text:
-                full_response += chunk_text
-                # 最後のメッセージを更新
-                messages[-1]["content"] += chunk_text
-                # クライアントに通知
-                emit("gemini_response_chunk", {"chunk": chunk_text, "chat_id": chat_id})
-
-        # トークン数情報を整形
-        if usage_metadata:
-            formatted_metadata = "\n\n---\n**" + model_name + "**    Token: " + f"{usage_metadata.total_token_count:,}" + "\n\n"
-            full_response += formatted_metadata
-            messages[-1]["content"] += formatted_metadata
-            emit("gemini_response_chunk", {"chunk": formatted_metadata, "chat_id": chat_id})
-            formatted_metadata = ""
-
-        # グラウンディング情報を整形して送信
-        if all_grounding_queries:
-            all_grounding_queries = " / ".join(
-                sorted(set(all_grounding_queries.rstrip(" /").split(" / ")))
-            )
-        if all_grounding_links:
-            formatted_metadata += all_grounding_links + "\n"
-        if all_grounding_queries:
-            formatted_metadata += "\nQuery: " + all_grounding_queries + "\n"
-
-        # 最後の応答にグラウンディング情報を追加
-        if formatted_metadata:
-            full_response += formatted_metadata
-            messages[-1]["content"] += formatted_metadata
-            emit("gemini_response_chunk", {"chunk": formatted_metadata, "chat_id": chat_id})
-
-        # Gemini履歴を保存
         save_chat_messages(user_dir, chat_id, messages)
-        save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
-        emit("gemini_response_complete", {"chat_id": chat_id})
-
-    except Exception as e:
-        # エラー時は一時メッセージを削除して詳細なエラー情報を送信
-        if len(messages) > 0 and messages[-1]["role"] == "model":
-            messages.pop()
-            chat.record_history(
-                user_input=input_content,
-                model_output=[],
-                automatic_function_calling_history=[],
-                is_valid=False 
-            )
-            save_chat_messages(user_dir, chat_id, messages)
-            save_gemini_history(user_dir, chat_id, fix_comprehensive_history(chat.get_history(curated=False)))
         emit("gemini_response_error", {"error": str(e), "chat_id": chat_id})
     finally:
         # 応答処理終了後にキャンセルフラグを削除

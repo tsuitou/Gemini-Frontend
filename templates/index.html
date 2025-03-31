@@ -68,15 +68,24 @@
     <template v-else>
       <!-- サイドバー -->
       <div class="sidebar">
-        <div class="sidebar-section model-section">
-          <div class="sidebar-section-title">モデル選択</div>
-          <select v-model="selectedModel" class="model-selector">
-            <option v-for="model in models" :key="model" :value="model">{{ model }}</option>
-          </select>
-          <button class="new-chat-btn" @click="createNewChat">
-            <i class="fas fa-plus"></i> 新規チャット
-          </button>
-        </div>
+				<div class="sidebar-section model-section">
+					<div class="sidebar-section-title">
+						モデル選択
+						<div class="toggle-container">
+							<span class="toggle-label">ストリーム</span>
+							<label class="toggle-switch">
+								<input type="checkbox" v-model="streamEnabled">
+								<span class="toggle-slider"></span>
+							</label>
+						</div>
+					</div>
+					<select v-model="selectedModel" class="model-selector">
+						<option v-for="model in models" :key="model" :value="model">{{ model }}</option>
+					</select>
+					<button class="new-chat-btn" @click="createNewChat">
+						<i class="fas fa-plus"></i> 新規チャット
+					</button>
+				</div>
         
         <div class="sidebar-section search-section">
           <div class="search-box">
