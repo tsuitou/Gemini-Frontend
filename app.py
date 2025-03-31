@@ -914,11 +914,8 @@ def handle_message(data):
                 contents.append(file_part)
         
         # メッセージテキストを最後に追加
-        contents.append(message)
+        contents.append(types.Part.from_text(text=message))
         
-        # ファイルがない場合はメッセージのみ
-        if not files:
-            contents = message
 
         if grounding_enabled:
             configs = GenerateContentConfig(
