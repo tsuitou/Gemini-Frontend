@@ -3,6 +3,7 @@ const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
 // マークダウンとコードハイライトの設定
 const md = window.markdownit({
   html: false,
+	breaks: true,
   linkify: true,
   typographer: true,
   highlight: function(str, lang) {
