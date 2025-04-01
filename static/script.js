@@ -543,6 +543,8 @@ createApp({
 				editingMessageId.value = null;
 				editingMessageText.value = '';
 				
+				resendMessage(index);
+				
 			} else if (messageRole === 'model') {
 				socket.emit('edit_model_message', {
 					token: token.value,
