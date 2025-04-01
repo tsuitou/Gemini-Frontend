@@ -571,15 +571,19 @@ input:checked + .toggle-slider:before {
 }
 
 .message-actions {
-  display: none;
+  display: flex; /* 常にフレックスコンテナとして存在させる */
   align-items: center;
   gap: 4px;
+  visibility: hidden; /* 視覚的に非表示にする */
+  opacity: 0;
+  transition: opacity 0.2s, visibility 0.2s; /* 表示・非表示をスムーズに */
 }
 
-.message:hover .message-actions {
-  display: flex;
+.message:hover .message-actions,
+.message:active .message-actions {
+  visibility: visible; /* 視覚的に表示する */
+  opacity: 1;
 }
-
 .message-action-btn {
   padding: 6px;
   color: var(--text-light);
@@ -1242,13 +1246,6 @@ pre:hover .code-copy-btn {
   color: white;
 }
 
-/* レスポンシブ調整 */
-@media (max-width: 768px) {
-  :root {
-    --sidebar-width: 240px;
-  }
-}
-
 /* アニメーション */
 @keyframes fadeIn {
   from {
@@ -1344,4 +1341,211 @@ pre:hover .code-copy-btn {
 .generated-image:hover {
   transform: scale(1.02);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* =============== モバイル対応スタイル =============== */
+
+.menu-toggle-header {
+  display: none;
+  width: 36px;
+  height: 36px;
+  color: var(--text-color);
+  border-radius: 6px;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+}
+
+.menu-toggle-header:hover {
+  background-color: var(--bg-gray);
+}
+
+/* オーバーレイ背景 */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 95;
+}
+
+/* タブレット向けスタイル調整 (768px以下) */
+@media (max-width: 768px) {
+  .sidebar {
+    box-shadow: var(--shadow-lg);
+  }
+	
+	.sidebar-item-actions {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+  
+  /* タイトルテキストの幅を調整して省略を適切に */
+  .chat-title-text {
+    max-width: calc(100% - 70px); /* アクションボタン分の幅を確保 */
+  }
+  
+  /* コンテンツサイズの調整 */
+  .message-content {
+    max-width: 90%;
+  }
+  
+  /* 入力エリアの調整 */
+  .input-container {
+    padding: 0;
+  }
+  
+  .message-input {
+    min-height: 50px;
+  }
+  
+  .message-actions {
+    gap: 8px;
+  }
+	
+  /* ボタンサイズの調整 */
+  .input-button, .send-button, .stop-button {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* モバイル向けスタイル調整 (480px以下) */
+@media (max-width: 480px) {
+  /* メインコンテナの調整 */
+  .app-container {
+    flex-direction: column;
+  }
+  
+  .menu-toggle-header {
+    display: flex;
+  }
+  
+  /* サイドバーをドロワースタイルに */
+  .sidebar {
+    position: fixed;
+    left: -100%;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 320px;
+    z-index: 100;
+    transition: left 0.3s ease;
+  }
+  
+  .sidebar.open {
+    left: 0;
+  }
+  
+  .sidebar-overlay.show {
+    display: block;
+  }
+  
+  /* メインコンテナの調整 */
+  .main-container {
+    margin-left: 0;
+    padding-top: 0;
+  }
+  
+  /* チャットヘッダーの調整 */
+  .chat-header {
+    padding: 12px;
+    display: flex;
+    align-items: center;
+  }
+  
+  /* メッセージコンテナの調整 */
+  .messages-container {
+    padding: 10px;
+  }
+  
+  /* メッセージの調整 */
+  .message {
+    margin-bottom: 16px;
+  }
+  
+  .message-content {
+    padding: 12px;
+    margin-left: 36px;
+    max-width: calc(100% - 40px);
+		font-size: 14px;
+  }
+  
+  .message-avatar {
+    width: 28px;
+    height: 28px;
+    margin-right: 8px;
+  }
+  
+  /* 入力エリアの調整 */
+  .input-area {
+    padding: 10px;
+  }
+  
+  .input-container {
+    flex-direction: column;
+  }
+  
+  .message-input {
+    min-height: 40px;
+    margin: 8px;
+  }
+  
+  .input-buttons {
+    padding: 4px;
+    border-top: 1px solid var(--border-color);
+    justify-content: space-between;
+    width: 100%;
+  }
+  
+  /* モーダルの調整 */
+  .modal-container {
+    width: 90%;
+  }
+  
+  /* トーストの調整 */
+  .toast {
+    width: 90%;
+    left: 5%;
+    right: 5%;
+  }
+  
+  /* 認証フォームの調整 */
+  .auth-card {
+    width: 90%;
+  }
+  
+  /* コードブロックの調整 */
+  .message-content pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  
+  /* ファイル添付のスタイル調整 */
+  .attachments-preview {
+    max-height: 80px;
+  }
+  
+  .attachment-item {
+    max-width: 100%;
+  }
+  
+  /* ボタンタップターゲットを大きく */
+  .message-action-btn,
+  .chat-action-btn {
+    min-width: 36px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  /* 画像ビューアーの調整 */
+  .image-viewer img {
+    max-width: 95%;
+  }
 }

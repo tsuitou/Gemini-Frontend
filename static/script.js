@@ -146,7 +146,7 @@ createApp({
     const groundingEnabled = ref(false);
     const codeExecutionEnabled = ref(false);
 		const imageGenerationEnabled = ref(false);
-		const streamEnabled = ref(true)
+		const streamEnabled = ref(true);
     
     // UI状態
     const searchQuery = ref('');
@@ -158,7 +158,9 @@ createApp({
     const toastMessage = ref('');
     const editingMessageId = ref(null);  // 編集中のメッセージID
     const editingMessageText = ref('');  // 編集中のメッセージテキスト
-    
+		const isSidebarOpen = ref(false);
+		const isMobile = ref(window.innerWidth <= 480);
+		
     // ファイル添付
     const attachments = ref([]);
     const isDraggingOver = ref(false)
@@ -262,7 +264,41 @@ createApp({
       currentChatId.value = null;
       chatHistory.value = {};
     };
-    
+   // ---------- モバイル ----------
+		// モバイルサイドバー切り替え関数
+		const toggleSidebar = () => {
+			isSidebarOpen.value = !isSidebarOpen.value;
+			
+			// サイドバーが開いたときにスクロールを無効化
+			if (isSidebarOpen.value) {
+				document.body.style.overflow = 'hidden';
+			} else {
+				document.body.style.overflow = '';
+			}
+		};
+
+		// サイドバーを閉じる関数
+		const closeSidebar = () => {
+			isSidebarOpen.value = false;
+			document.body.style.overflow = '';
+		};
+
+		// モバイルでのチャット読み込み時にサイドバーを閉じる
+		const loadChatMobile = (chatId) => {
+			loadChat(chatId);
+			if (isMobile.value) {
+				closeSidebar();
+			}
+		};
+
+		// ウィンドウサイズ変更検知
+		const handleResize = () => {
+			isMobile.value = window.innerWidth <= 480;
+			if (!isMobile.value) {
+				// モバイルではない場合、サイドバーを閉じる必要はない
+				document.body.style.overflow = '';
+			}
+		};
     // ---------- チャット管理 ----------
     
     // 新規チャットの作成
@@ -1528,7 +1564,7 @@ const handleDrop = (event) => {
       
       // イベントリスナーの設定
       window.addEventListener('resize', resizeTextarea);
-      
+			window.addEventListener('resize', handleResize);
       // テキストエリアの初期サイズ調整
       nextTick(() => {
         resizeTextarea();
@@ -1606,7 +1642,12 @@ const handleDrop = (event) => {
       handleEditTab,
       handleEditShiftTab,
       formatTimestamp,
-      
+			isSidebarOpen,
+			isMobile,
+			toggleSidebar,
+			closeSidebar,
+			loadChatMobile,
+			
       // モーダル関連
       showEditTitleModal,
       editTitleText,
