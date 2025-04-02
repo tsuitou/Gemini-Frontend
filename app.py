@@ -661,7 +661,7 @@ def process_response(chat, contents, user_dir, chat_id, messages, username, mode
                 chunk_text = process_chunk(chunk, messages, username)
                 
                 # グラウンディング情報の処理
-                process_grounding(chunk, all_grounding_links, all_grounding_queries)
+                all_grounding_links, all_grounding_queries = process_grounding(chunk)
                 
                 if chunk_text:
                     full_response += chunk_text
@@ -681,7 +681,7 @@ def process_response(chat, contents, user_dir, chat_id, messages, username, mode
             response_text = process_chunk(response, messages, username)
             
             # グラウンディング情報の処理
-            process_grounding(response, all_grounding_links, all_grounding_queries)
+            all_grounding_links, all_grounding_queries = process_grounding(chunk)
             
             full_response = response_text
             messages[-1]["content"] = response_text
@@ -773,8 +773,11 @@ def process_chunk(chunk, messages, username):
     return chunk_text
 
 
-def process_grounding(chunk, all_grounding_links, all_grounding_queries):
+def process_grounding(chunk):
     """グラウンディング情報を抽出する"""
+    all_grounding_links = ""
+    all_grounding_queries = ""
+    
     if hasattr(chunk, "candidates") and chunk.candidates:
         candidate = chunk.candidates[0]
         if hasattr(candidate, "grounding_metadata") and candidate.grounding_metadata:
@@ -786,6 +789,8 @@ def process_grounding(chunk, all_grounding_links, all_grounding_queries):
             if hasattr(metadata, "web_search_queries") and metadata.web_search_queries:
                 for query in metadata.web_search_queries:
                     all_grounding_queries += f"{query} / "
+
+    return all_grounding_links, all_grounding_queries
 
 
 def format_token_metadata(model_name, usage_metadata):

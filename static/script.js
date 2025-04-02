@@ -677,6 +677,7 @@ createApp({
       groundingEnabled.value = !groundingEnabled.value;
       if (groundingEnabled.value && codeExecutionEnabled.value) {
         codeExecutionEnabled.value = false; // 両方を同時に有効にはできない
+				imageGenerationEnabled.value = false;
       }
     };
     
@@ -685,6 +686,7 @@ createApp({
       codeExecutionEnabled.value = !codeExecutionEnabled.value;
       if (codeExecutionEnabled.value && groundingEnabled.value) {
         groundingEnabled.value = false; // 両方を同時に有効にはできない
+				imageGenerationEnabled.value = false;
       }
     };
     
