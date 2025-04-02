@@ -675,7 +675,7 @@ createApp({
     // グラウンディング機能の切り替え
     const toggleGroundingEnabled = () => {
       groundingEnabled.value = !groundingEnabled.value;
-      if (groundingEnabled.value && codeExecutionEnabled.value) {
+      if (groundingEnabled.value) {
         codeExecutionEnabled.value = false; // 両方を同時に有効にはできない
 				imageGenerationEnabled.value = false;
       }
@@ -684,7 +684,7 @@ createApp({
     // コード実行機能の切り替え
     const toggleCodeExecution = () => {
       codeExecutionEnabled.value = !codeExecutionEnabled.value;
-      if (codeExecutionEnabled.value && groundingEnabled.value) {
+      if (codeExecutionEnabled.value) {
         groundingEnabled.value = false; // 両方を同時に有効にはできない
 				imageGenerationEnabled.value = false;
       }
