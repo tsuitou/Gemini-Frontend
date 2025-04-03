@@ -52,6 +52,7 @@ MODELS = os.environ.get("MODELS", "").split(",")
 SYSTEM_INSTRUCTION = os.environ.get("SYSTEM_INSTRUCTION")
 VERSION = os.environ.get("VERSION")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+SYSTEM_INSTRUCTION_FILE = os.environ.get("SYSTEM_INSTRUCTION_FILE")
 
 # -----------------------------------------------------------
 # 2) SQLite 用の初期設定
@@ -834,6 +835,12 @@ def handle_message(data):
     image_generation_enabled = data.get("image_generation_enabled", False)
     stream_enabled = data.get("stream_enabled", True)  # デフォルトはストリーミングモード
     
+    if SYSTEM_INSTRUCTION_FILE:
+        with open(SYSTEM_INSTRUCTION_FILE, 'r', encoding='utf-8') as file:
+            system_instructions = file.read()
+    else:
+        system_instructions = SYSTEM_INSTRUCTION
+    
     # 複数ファイル情報を取得
     files = data.get("files", [])
 
@@ -899,13 +906,13 @@ def handle_message(data):
         # 構成設定
         if grounding_enabled:
             configs = GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=system_instructions,
                 tools=[google_search_tool],
                 response_modalities=['Text']
             )
         elif code_execution_enabled:
             configs = GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=system_instructions,
                 tools=[code_execution_tool],
                 response_modalities=['Text']
             )
@@ -915,7 +922,7 @@ def handle_message(data):
             )
         else:
             configs = GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=system_instructions,
                 response_modalities=['Text']
             )
         
@@ -966,6 +973,12 @@ def handle_resend_message(data):
     image_generation_enabled = data.get("image_generation_enabled", False)
     stream_enabled = data.get("stream_enabled", True)  # デフォルトはストリーミングモード
     
+    if SYSTEM_INSTRUCTION_FILE:
+        with open(SYSTEM_INSTRUCTION_FILE, 'r', encoding='utf-8') as file:
+            system_instructions = file.read()
+    else:
+        system_instructions = SYSTEM_INSTRUCTION
+    
     user_dir = get_user_dir(username)
     messages = load_chat_messages(user_dir, chat_id)
     
@@ -1013,13 +1026,13 @@ def handle_resend_message(data):
         # Gemini API設定
         if grounding_enabled:
             configs = GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=system_instructions,
                 tools=[google_search_tool],
                 response_modalities=['Text'],
             )
         elif code_execution_enabled:
             configs = GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=system_instructions,
                 tools=[code_execution_tool],
                 response_modalities=['Text'],
             )
@@ -1029,7 +1042,7 @@ def handle_resend_message(data):
             )
         else:
             configs = GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=system_instructions,
                 response_modalities=['Text'],
             )
 
