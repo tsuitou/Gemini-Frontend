@@ -682,7 +682,7 @@ def process_response(chat, contents, user_dir, chat_id, messages, username, mode
             response_text = process_chunk(response, messages, username)
             
             # グラウンディング情報の処理
-            all_grounding_links, all_grounding_queries = process_grounding(chunk)
+            all_grounding_links, all_grounding_queries = process_grounding(response)
             
             full_response = response_text
             messages[-1]["content"] = response_text
