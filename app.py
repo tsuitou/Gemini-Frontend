@@ -53,6 +53,7 @@ SYSTEM_INSTRUCTION = os.environ.get("SYSTEM_INSTRUCTION")
 VERSION = os.environ.get("VERSION")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 SYSTEM_INSTRUCTION_FILE = os.environ.get("SYSTEM_INSTRUCTION_FILE")
+EXPERIMENTAL = os.environ.get("EXPERIMENTAL")
 
 # -----------------------------------------------------------
 # 2) SQLite 用の初期設定
@@ -538,6 +539,8 @@ def handle_get_model_list():
     api_model_names = [m.name for m in api_models]
     combined_models = sorted(set(api_model_names + [m.strip() for m in MODELS if m.strip()]))
     filtered_models = [model for model in combined_models if "gemini" in model]
+    if not EXPERIMENTAL:
+        filtered_models = [model for model in filtered_models if  not "exp" in model]
     emit("model_list", {"models": filtered_models})
 
 @socketio.on("cancel_stream")
