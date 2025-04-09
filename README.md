@@ -1,11 +1,11 @@
 ![スクリーンショット 2025-03-17 111153](https://github.com/user-attachments/assets/40be2f76-a085-405b-b6d4-02bd7711f137)
 1. **リポジトリのクローンまたは ZIP ファイルの展開:**
 
-  リポジトリをローカル環境にクローンするか、ZIP ファイルをダウンロードして展開
+    リポジトリをローカル環境にクローンするか、ZIP ファイルをダウンロードして展開
 
-   ```bash
-   git clone https://github.com/tsuitou/Gemini-Frontend.git
-   ```
+     ```bash
+     git clone https://github.com/tsuitou/Gemini-Frontend.git
+     ```
 
 2. **仮想環境の作成:**
 
