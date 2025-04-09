@@ -745,7 +745,7 @@ def process_chunk(chunk, messages, username):
             if hasattr(part, 'code_execution_result') and part.code_execution_result:
                 chunk_text += f"\n**Code Execution Result**\n```Python\n{part.code_execution_result}\n```\n"
             if hasattr(chunk, 'thought') and chunk.thought:
-                chunk_text += f"\nThought:\n{chunk.thought}\n"
+                chunk_text += chunk.thought
             if hasattr(part, 'inline_data') and part.inline_data is not None:
                 try:
                     mime = part.inline_data.mime_type

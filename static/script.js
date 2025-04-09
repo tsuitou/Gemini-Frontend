@@ -1108,6 +1108,281 @@ createApp({
       }
     };
     
+		// チャットのダウンロード関数
+		const downloadChat = (chatId) => {
+			if (!chatId || !chatHistory.value[chatId] || !currentChat.value) return;
+			
+			// HTMLの生成
+			const chatTitle = chatHistory.value[chatId].title;
+			const messages = currentChat.value.messages;
+			
+			// ヘッダーとスタイルを含むHTML
+			let html = `
+			<!DOCTYPE html>
+			<html lang="ja">
+			<head>
+				<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+				<meta charset="UTF-8">
+				<meta name="viewport" content="width=device-width, initial-scale=1.0">
+				<title>${escapeHtml(chatTitle)}</title>
+				<style>
+					* {
+						margin: 0;
+						padding: 0;
+						box-sizing: border-box;
+						font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+					}
+					body {
+						background-color: #f9fafb;
+						color: #1f2937;
+						padding: 20px;
+						max-width: 1000px;
+						margin: 0 auto;
+						line-height: 1.5;
+					}
+					.header {
+						padding: 20px;
+						margin-bottom: 20px;
+					}
+					.header h1 {
+						font-size: 1.5rem;
+					}
+					.message {
+						margin-bottom: 20px;
+						padding: 16px;
+						border-radius: 8px;
+					}
+					.user {
+						background-color: #f0f9ff;
+					}
+					.model {
+						background-color: #ffffff;
+						box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+					}
+					.message-header {
+						display: flex;
+						align-items: center;
+						margin-bottom: 10px;
+						font-weight: bold;
+					}
+					.user .message-header {
+						color: #4f46e5;
+					}
+					.model .message-header {
+						color: #10b981;
+					}
+					.timestamp {
+						font-size: 0.8rem;
+						color: #6b7280;
+						margin-left: 10px;
+					}
+					.attachments {
+						display: flex;
+						flex-wrap: wrap;
+						gap: 8px;
+						margin: 8px 0;
+					}
+					.attachment {
+						display: flex;
+						align-items: center;
+						gap: 6px;
+						padding: 6px 10px;
+						background-color: #f3f4f6;
+						border: 1px solid #e5e7eb;
+						border-radius: 6px;
+						font-size: 13px;
+					}
+					/* マークダウンスタイル */
+					.message-content h1,
+					.message-content h2,
+					.message-content h3,
+					.message-content h4,
+					.message-content h5,
+					.message-content h6 {
+						margin-top: 1.2em;
+						margin-bottom: 0.6em;
+						line-height: 1.25;
+					}
+					.message-content h1 {
+						font-size: 1.8em;
+						border-bottom: 1px solid #e5e7eb;
+						padding-bottom: 0.3em;
+					}
+					.message-content h2 {
+						font-size: 1.6em;
+						border-bottom: 1px solid #e5e7eb;
+						padding-bottom: 0.2em;
+					}
+					.message-content h3 { font-size: 1.4em; }
+					.message-content h4 { font-size: 1.2em; }
+					.message-content h5 { font-size: 1.1em; }
+					.message-content h6 {
+						font-size: 1em;
+						color: #6b7280;
+					}
+					.message-content p { margin-bottom: 1em; }
+					.message-content ul, 
+					.message-content ol {
+						margin-bottom: 1em;
+						padding-left: 2em;
+					}
+					.message-content li { margin-bottom: 0.25em; }
+					.message-content blockquote {
+						padding-left: 1em;
+						border-left: 4px solid #e5e7eb;
+						color: #6b7280;
+						margin: 1em 0;
+					}
+					.message-content pre {
+						margin: 1em 0;
+						padding: 16px;
+						background-color: #1f2937;
+						color: #f3f4f6;
+						border-radius: 6px;
+						overflow-x: auto;
+						font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+					}
+					.message-content code {
+						font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+						font-size: 0.9em;
+					}
+					.message-content p code {
+						background-color: #f3f4f6;
+						padding: 2px 4px;
+						border-radius: 4px;
+						color: #1f2937;
+					}
+					.message-content table {
+						border-collapse: collapse;
+						margin: 1em 0;
+						width: 100%;
+					}
+					.message-content th, 
+					.message-content td {
+						border: 1px solid #e5e7eb;
+						padding: 8px 12px;
+					}
+					.message-content th {
+						background-color: #f9fafb;
+						font-weight: 600;
+					}
+					.message-content img {
+						max-width: 100%;
+						height: auto;
+						border-radius: 6px;
+						margin: 1em 0;
+					}
+					.footer {
+						text-align: center;
+						margin-top: 30px;
+						padding: 15px;
+						border-top: 1px solid #e5e7eb;
+						color: #6b7280;
+						font-size: 0.9rem;
+					}
+				</style>
+			</head>
+			<body>
+				<div class="header">
+					<h1>${escapeHtml(chatTitle)}</h1>
+				</div>
+			`;
+			
+			// メッセージごとにHTMLを生成
+			messages.forEach(message => {
+				const timestamp = formatTimestamp(message.timestamp);
+				const role = message.role === 'user' ? 'ユーザー' : 'モデル';
+				
+				// コンテンツの処理
+				let content = '';
+				if (message.role === 'model') {
+					// モデルのレスポンスはマークダウンをHTMLに変換
+					content = md.render(message.content);
+				} else {
+					// ユーザーのメッセージはプレーンテキストとして処理（エスケープして改行を保持）
+					content = escapeHtml(message.content).replace(/\n/g, '<br>');
+				}
+				
+				// メッセージHTMLの生成
+				html += `
+				<div class="message ${message.role}">
+					<div class="message-header">
+						${role}
+					</div>`;
+				
+				// 添付ファイルがある場合
+				if (message.attachments && message.attachments.length > 0) {
+					html += `<div class="attachments">`;
+					message.attachments.forEach(attachment => {
+						html += `
+						<div class="attachment">
+							<i class="fas ${getFileIconClass(attachment.type)}"></i>
+							<span>${escapeHtml(attachment.name)}</span>
+						</div>`;
+					});
+					html += `</div>`;
+				}
+				
+				html += `
+					<div class="message-content">
+						${content}
+					</div>
+				</div>
+				`;
+			});
+			
+			// フッターと閉じタグの追加
+			html += `
+			</body>
+			</html>
+			`;
+			
+			// HTMLファイルとしてダウンロード
+			const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `${chatTitle}.html`;
+			document.body.appendChild(a);
+			a.click();
+			
+			// クリーンアップ
+			setTimeout(() => {
+				document.body.removeChild(a);
+				URL.revokeObjectURL(url);
+			}, 100);
+			
+			showToastMessage('チャットをダウンロードしました');
+		};
+
+		// HTMLエスケープ関数
+		const escapeHtml = (text) => {
+			if (!text) return '';
+			const map = {
+				'&': '&amp;',
+				'<': '&lt;',
+				'>': '&gt;',
+				'"': '&quot;',
+				"'": '&#039;'
+			};
+			return text.replace(/[&<>"']/g, m => map[m]);
+		};
+
+		// ファイルアイコンのクラス名を取得（HTMLで使用）
+		const getFileIconClass = (mimeType) => {
+			if (!mimeType) return 'fa-file';
+			
+			if (mimeType.startsWith('image/')) return 'fa-image';
+			if (mimeType.startsWith('text/')) return 'fa-file-alt';
+			if (mimeType.startsWith('application/pdf')) return 'fa-file-pdf';
+			if (mimeType.includes('spreadsheet') || mimeType.includes('csv')) return 'fa-file-excel';
+			if (mimeType.includes('document') || mimeType.includes('word')) return 'fa-file-word';
+			if (mimeType.includes('javascript') || mimeType.includes('python')) return 'fa-file-code';
+			if (mimeType.startsWith('audio/')) return 'fa-file-audio';
+			if (mimeType.startsWith('video/')) return 'fa-file-video';
+			
+			return 'fa-file';
+		};
     // ---------- ファイル関連 ----------
 
 		const FILE_SIZE_THRESHOLD = 10 * 1024 * 1024; // 10MB
@@ -1247,91 +1522,91 @@ createApp({
 			isDraggingOver.value = true;
 		};
 		
-const handleDrop = (event) => {
-  event.preventDefault();
-  isDraggingOver.value = false;
-  
-  // ドロップされたファイルを取得
-  const droppedFiles = event.dataTransfer.files;
-  
-  if (!droppedFiles || droppedFiles.length === 0) return;
-  
-  // 複数ファイルの追加処理
-  for (let i = 0; i < droppedFiles.length; i++) {
-    const file = droppedFiles[i];
-    
-    // 拡張子チェック
-    if (!ALLOWED_EXTENSIONS.test(file.name)) {
-      showToastMessage(`非対応の拡張子です: ${file.name}`);
-      continue;
-    }
-    
-    // ファイルサイズチェック
-    if (file.size > FILE_SIZE_THRESHOLD) {
-      // 動画・音声ファイルの場合は許可
-      if (MEDIA_EXTENSIONS.test(file.name)) {
-        // ファイル情報の追加
-        attachments.value.push({
-          name: file.name,
-          type: file.type || getMimeTypeFromFilename(file.name),
-          size: file.size,
-          file: file
-        });
-      } else {
-        showToastMessage(`動画・音声以外のファイルサイズ上限は10MBです: ${file.name}`);
-        continue;
-      }
-    } else if (EXCEL_EXTENSIONS.test(file.name)) {
-      // Excelファイルの変換処理
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const data = new Uint8Array(e.target.result);
-        // SheetJSでWorkbookを読み込む
-        const workbook = XLSX.read(data, { type: "array" });
-        // テキスト出力用の変数
-        let textOutput = "";
-        // 全てのシートをループしてCSV文字列に変換
-        workbook.SheetNames.forEach((sheetName) => {
-          const worksheet = workbook.Sheets[sheetName];
-          // CSV形式で取得
-          const csv = XLSX.utils.sheet_to_csv(worksheet);
-          // シート名を含める
-          textOutput += `=== Sheet: ${sheetName} ===\n${csv}\n\n`;
-        });
-        
-        // 変換したテキストデータでBlobを作成
-        const blob = new Blob([textOutput], { type: "text/plain" });
-        const convertedFile = new File([blob], file.name.replace(/\.(xlsx|xlsm)$/i, ".txt"), {
-          type: "text/plain"
-        });
-        
-        // 変換したファイル情報を追加
-        attachments.value.push({
-          name: convertedFile.name,
-          type: convertedFile.type,
-          size: convertedFile.size,
-          file: convertedFile,
-          originalName: file.name
-        });
-      };
-      reader.onerror = () => {
-        showToastMessage(`Excelファイルの変換に失敗しました: ${file.name}`);
-      };
-      reader.readAsArrayBuffer(file);
-    } else {
-      // 通常のファイル処理
-      attachments.value.push({
-        name: file.name,
-        type: file.type || getMimeTypeFromFilename(file.name),
-        size: file.size,
-        file: file
-      });
-    }
-  }
-  
-  // 入力エリアにフォーカスを戻す
-  messageInput.value.focus();
-};
+		const handleDrop = (event) => {
+			event.preventDefault();
+			isDraggingOver.value = false;
+			
+			// ドロップされたファイルを取得
+			const droppedFiles = event.dataTransfer.files;
+			
+			if (!droppedFiles || droppedFiles.length === 0) return;
+			
+			// 複数ファイルの追加処理
+			for (let i = 0; i < droppedFiles.length; i++) {
+				const file = droppedFiles[i];
+				
+				// 拡張子チェック
+				if (!ALLOWED_EXTENSIONS.test(file.name)) {
+					showToastMessage(`非対応の拡張子です: ${file.name}`);
+					continue;
+				}
+				
+				// ファイルサイズチェック
+				if (file.size > FILE_SIZE_THRESHOLD) {
+					// 動画・音声ファイルの場合は許可
+					if (MEDIA_EXTENSIONS.test(file.name)) {
+						// ファイル情報の追加
+						attachments.value.push({
+							name: file.name,
+							type: file.type || getMimeTypeFromFilename(file.name),
+							size: file.size,
+							file: file
+						});
+					} else {
+						showToastMessage(`動画・音声以外のファイルサイズ上限は10MBです: ${file.name}`);
+						continue;
+					}
+				} else if (EXCEL_EXTENSIONS.test(file.name)) {
+					// Excelファイルの変換処理
+					const reader = new FileReader();
+					reader.onload = (e) => {
+						const data = new Uint8Array(e.target.result);
+						// SheetJSでWorkbookを読み込む
+						const workbook = XLSX.read(data, { type: "array" });
+						// テキスト出力用の変数
+						let textOutput = "";
+						// 全てのシートをループしてCSV文字列に変換
+						workbook.SheetNames.forEach((sheetName) => {
+							const worksheet = workbook.Sheets[sheetName];
+							// CSV形式で取得
+							const csv = XLSX.utils.sheet_to_csv(worksheet);
+							// シート名を含める
+							textOutput += `=== Sheet: ${sheetName} ===\n${csv}\n\n`;
+						});
+						
+						// 変換したテキストデータでBlobを作成
+						const blob = new Blob([textOutput], { type: "text/plain" });
+						const convertedFile = new File([blob], file.name.replace(/\.(xlsx|xlsm)$/i, ".txt"), {
+							type: "text/plain"
+						});
+						
+						// 変換したファイル情報を追加
+						attachments.value.push({
+							name: convertedFile.name,
+							type: convertedFile.type,
+							size: convertedFile.size,
+							file: convertedFile,
+							originalName: file.name
+						});
+					};
+					reader.onerror = () => {
+						showToastMessage(`Excelファイルの変換に失敗しました: ${file.name}`);
+					};
+					reader.readAsArrayBuffer(file);
+				} else {
+					// 通常のファイル処理
+					attachments.value.push({
+						name: file.name,
+						type: file.type || getMimeTypeFromFilename(file.name),
+						size: file.size,
+						file: file
+					});
+				}
+			}
+			
+			// 入力エリアにフォーカスを戻す
+			messageInput.value.focus();
+		};
     // =====================================
     // Socket.IO イベントハンドラ
     // =====================================
@@ -1607,6 +1882,7 @@ const handleDrop = (event) => {
       confirmDeleteChat,
       deleteChat,
       toggleBookmark,
+			downloadChat,
       
       // メッセージ関連
 			copyMessageContent,

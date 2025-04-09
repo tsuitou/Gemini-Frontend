@@ -1174,12 +1174,49 @@ input:checked + .toggle-slider:before {
   line-height: 1.5;
 }
 
-.message-content p code {
+.message-content pre code {
+  display: block;
+  overflow-x: auto;
+  padding: 1em;
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  background-color: transparent;
+  border-radius: 0; 
+}
+
+.message-content :not(pre) > code {
   background-color: var(--code-bg);
-  padding: 2px 4px;
+  padding: 0.2em 0.4em;
+  margin: 0 0.1em;
   border-radius: 4px;
   font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.9em;
+  color: inherit;
+  white-space: nowrap; 
+}
+
+.message-content pre {
+  margin: 1em 0;
+  padding: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  background-color: #1f2937;
+  color: #f3f4f6;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.message-content pre::before {
+  content: attr(data-language);
+  display: block;
+  background-color: #374151;
+  color: #e5e7eb;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  border-bottom: 1px solid #4b5563;
 }
 
 .message-content table {
