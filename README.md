@@ -4,7 +4,7 @@
    まず、このリポジトリをローカル環境にクローンするか、ZIP ファイルをダウンロードして展開します。
 
    ```bash
-   git clone <リポジトリのURL>
+   git clone https://github.com/tsuitou/Gemini-Frontend.git
    ```
 
 2. **仮想環境の作成:**
@@ -58,4 +58,4 @@
 
 7. **ブラウザでアクセス:**
 
-   Web ブラウザから `http://localhost:5000/gemini` にアクセスして、チャットアプリケーションを使用します。
+   Web ブラウザから `http://localhost:5000/gemini` にアクセスするとアプリが利用できます。
