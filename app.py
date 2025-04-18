@@ -20,7 +20,7 @@ from flask_socketio import SocketIO, emit
 from google import genai
 from google.genai import _transformers as t
 from google.genai import types 
-from google.genai.types import Tool, GenerateContentConfig, GoogleSearch, ToolCodeExecution
+from google.genai.types import Tool, GenerateContentConfig, GoogleSearch, ToolCodeExecution, ThinkingConfig
 from dotenv import load_dotenv
 from pathlib import Path
 from filelock import FileLock
@@ -54,6 +54,7 @@ VERSION = os.environ.get("VERSION")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 SYSTEM_INSTRUCTION_FILE = os.environ.get("SYSTEM_INSTRUCTION_FILE")
 EXPERIMENTAL = os.environ.get("EXPERIMENTAL")
+THINKING_BUDGET = os.environ.get("THINKING_BUDGET")
 
 # -----------------------------------------------------------
 # 2) SQLite 用の初期設定
@@ -907,27 +908,54 @@ def handle_message(data):
         contents.append(types.Part.from_text(text=message))
         
         # 構成設定
-        if grounding_enabled:
-            configs = GenerateContentConfig(
-                system_instruction=system_instructions,
-                tools=[google_search_tool],
-                response_modalities=['Text']
-            )
-        elif code_execution_enabled:
-            configs = GenerateContentConfig(
-                system_instruction=system_instructions,
-                tools=[code_execution_tool],
-                response_modalities=['Text']
-            )
-        elif image_generation_enabled:
-            configs = GenerateContentConfig(
-                response_modalities=['Text', 'Image']
-            )
+        if "gemini-2.5-flash" in model_name:
+            if grounding_enabled:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    tools=[google_search_tool],
+                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
+                    response_modalities=['Text'],
+                )
+            elif code_execution_enabled:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    tools=[code_execution_tool],
+                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
+                    response_modalities=['Text'],
+                )
+            elif image_generation_enabled:
+                configs = GenerateContentConfig(
+                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
+                    response_modalities=['Text', 'Image'],
+                )
+            else:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
+                    response_modalities=['Text'],
+                )
         else:
-            configs = GenerateContentConfig(
-                system_instruction=system_instructions,
-                response_modalities=['Text']
-            )
+            if grounding_enabled:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    tools=[google_search_tool],
+                    response_modalities=['Text'],
+                )
+            elif code_execution_enabled:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    tools=[code_execution_tool],
+                    response_modalities=['Text'],
+                )
+            elif image_generation_enabled:
+                configs = GenerateContentConfig(
+                    response_modalities=['Text', 'Image'],
+                )
+            else:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    response_modalities=['Text'],
+                )
         
         # チャット作成
         chat = client.chats.create(model=model_name, history=gemini_history, config=configs)
