@@ -738,6 +738,7 @@ def process_chunk(chunk, messages, username):
     """チャンクからテキストとイメージを抽出する"""
     chunk_text = ""
     
+    
     if hasattr(chunk, "candidates") and chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
         for part in chunk.candidates[0].content.parts:
             if part.text:
@@ -746,8 +747,6 @@ def process_chunk(chunk, messages, username):
                 chunk_text += f"\n**Executable Code**\n```Python\n{part.executable_code.code}\n```\n"
             if hasattr(part, 'code_execution_result') and part.code_execution_result:
                 chunk_text += f"\n**Code Execution Result**\n```Python\n{part.code_execution_result}\n```\n"
-            if hasattr(chunk, 'thought') and chunk.thought:
-                chunk_text += chunk.thought
             if hasattr(part, 'inline_data') and part.inline_data is not None:
                 try:
                     mime = part.inline_data.mime_type
