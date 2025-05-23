@@ -55,6 +55,7 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 SYSTEM_INSTRUCTION_FILE = os.environ.get("SYSTEM_INSTRUCTION_FILE")
 EXPERIMENTAL = os.environ.get("EXPERIMENTAL")
 THINKING_BUDGET = os.environ.get("THINKING_BUDGET")
+INCLUDE_THOUGHTS = os.environ.get("INCLUDE_THOUGHTS")
 
 # -----------------------------------------------------------
 # 2) SQLite 用の初期設定
@@ -908,54 +909,27 @@ def handle_message(data):
         contents.append(types.Part.from_text(text=message))
         
         # 構成設定
-        if "gemini-2.5-flash" in model_name:
-            if grounding_enabled:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    tools=[google_search_tool],
-                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
-                    response_modalities=['Text'],
-                )
-            elif code_execution_enabled:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    tools=[code_execution_tool],
-                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
-                    response_modalities=['Text'],
-                )
-            elif image_generation_enabled:
-                configs = GenerateContentConfig(
-                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
-                    response_modalities=['Text', 'Image'],
-                )
-            else:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
-                    response_modalities=['Text'],
-                )
+        kwargs_for_config = {}
+
+        if image_generation_enabled:
+            kwargs_for_config['response_modalities'] = ['Text', 'Image']
         else:
+            kwargs_for_config['response_modalities'] = ['Text']
+
+        if not image_generation_enabled:
+            kwargs_for_config['system_instruction'] = system_instructions
+
             if grounding_enabled:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    tools=[google_search_tool],
-                    response_modalities=['Text'],
-                )
+                kwargs_for_config['tools'] = [google_search_tool]
             elif code_execution_enabled:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    tools=[code_execution_tool],
-                    response_modalities=['Text'],
-                )
-            elif image_generation_enabled:
-                configs = GenerateContentConfig(
-                    response_modalities=['Text', 'Image'],
-                )
-            else:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    response_modalities=['Text'],
-                )
+                kwargs_for_config['tools'] = [code_execution_tool]
+
+        if "gemini-2.5-flash" in model_name:
+            kwargs_for_config['thinking_config'] = ThinkingConfig(thinking_budget=THINKING_BUDGET, include_thoughts=INCLUDE_THOUGHTS)
+        elif "gemini-2.5-pro" in model_name:
+            kwargs_for_config['thinking_config'] = ThinkingConfig(include_thoughts=INCLUDE_THOUGHTS)
+
+        configs = GenerateContentConfig(**kwargs_for_config)
         
         # チャット作成
         chat = client.chats.create(model=model_name, history=gemini_history, config=configs)
@@ -1054,55 +1028,28 @@ def handle_resend_message(data):
     save_gemini_history(user_dir, chat_id, truncated_history)
     
     try:
-        # Gemini API設定
-        if "gemini-2.5-flash" in model_name:
-            if grounding_enabled:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    tools=[google_search_tool],
-                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
-                    response_modalities=['Text'],
-                )
-            elif code_execution_enabled:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    tools=[code_execution_tool],
-                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
-                    response_modalities=['Text'],
-                )
-            elif image_generation_enabled:
-                configs = GenerateContentConfig(
-                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
-                    response_modalities=['Text', 'Image'],
-                )
-            else:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
-                    response_modalities=['Text'],
-                )
+        # 構成設定
+        kwargs_for_config = {}
+
+        if image_generation_enabled:
+            kwargs_for_config['response_modalities'] = ['Text', 'Image']
         else:
+            kwargs_for_config['response_modalities'] = ['Text']
+
+        if not image_generation_enabled:
+            kwargs_for_config['system_instruction'] = system_instructions
+
             if grounding_enabled:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    tools=[google_search_tool],
-                    response_modalities=['Text'],
-                )
+                kwargs_for_config['tools'] = [google_search_tool]
             elif code_execution_enabled:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    tools=[code_execution_tool],
-                    response_modalities=['Text'],
-                )
-            elif image_generation_enabled:
-                configs = GenerateContentConfig(
-                    response_modalities=['Text', 'Image'],
-                )
-            else:
-                configs = GenerateContentConfig(
-                    system_instruction=system_instructions,
-                    response_modalities=['Text'],
-                )
+                kwargs_for_config['tools'] = [code_execution_tool]
+
+        if "gemini-2.5-flash" in model_name:
+            kwargs_for_config['thinking_config'] = ThinkingConfig(thinking_budget=THINKING_BUDGET, include_thoughts=INCLUDE_THOUGHTS)
+        elif "gemini-2.5-pro" in model_name:
+            kwargs_for_config['thinking_config'] = ThinkingConfig(include_thoughts=INCLUDE_THOUGHTS)
+
+        configs = GenerateContentConfig(**kwargs_for_config)
 
         # チャットインスタンスを作成（ユーザーメッセージを含まない履歴）
         chat = client.chats.create(model=model_name, history=truncated_history, config=configs)
