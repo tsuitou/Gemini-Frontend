@@ -1055,27 +1055,54 @@ def handle_resend_message(data):
     
     try:
         # Gemini API設定
-        if grounding_enabled:
-            configs = GenerateContentConfig(
-                system_instruction=system_instructions,
-                tools=[google_search_tool],
-                response_modalities=['Text'],
-            )
-        elif code_execution_enabled:
-            configs = GenerateContentConfig(
-                system_instruction=system_instructions,
-                tools=[code_execution_tool],
-                response_modalities=['Text'],
-            )
-        elif image_generation_enabled:
-            configs = GenerateContentConfig(
-                response_modalities=['Text', 'Image']
-            )
+        if "gemini-2.5-flash" in model_name:
+            if grounding_enabled:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    tools=[google_search_tool],
+                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
+                    response_modalities=['Text'],
+                )
+            elif code_execution_enabled:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    tools=[code_execution_tool],
+                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
+                    response_modalities=['Text'],
+                )
+            elif image_generation_enabled:
+                configs = GenerateContentConfig(
+                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
+                    response_modalities=['Text', 'Image'],
+                )
+            else:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    thinking_config=ThinkingConfig(thinking_budget=THINKING_BUDGET),
+                    response_modalities=['Text'],
+                )
         else:
-            configs = GenerateContentConfig(
-                system_instruction=system_instructions,
-                response_modalities=['Text'],
-            )
+            if grounding_enabled:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    tools=[google_search_tool],
+                    response_modalities=['Text'],
+                )
+            elif code_execution_enabled:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    tools=[code_execution_tool],
+                    response_modalities=['Text'],
+                )
+            elif image_generation_enabled:
+                configs = GenerateContentConfig(
+                    response_modalities=['Text', 'Image'],
+                )
+            else:
+                configs = GenerateContentConfig(
+                    system_instruction=system_instructions,
+                    response_modalities=['Text'],
+                )
 
         # チャットインスタンスを作成（ユーザーメッセージを含まない履歴）
         chat = client.chats.create(model=model_name, history=truncated_history, config=configs)
