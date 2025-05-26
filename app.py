@@ -933,7 +933,7 @@ def handle_message(data):
             kwargs_for_config['thinking_config'] = ThinkingConfig(include_thoughts=INCLUDE_THOUGHTS)
 
         configs = GenerateContentConfig(**kwargs_for_config)
-        
+
         # チャット作成
         chat = client.chats.create(model=model_name, history=gemini_history, config=configs)
         
@@ -1041,11 +1041,11 @@ def handle_resend_message(data):
 
         if not image_generation_enabled:
             kwargs_for_config['system_instruction'] = system_instructions
-
+            kwargs_for_config['tools'] = [url_context_tool]
             if grounding_enabled:
-                kwargs_for_config['tools'] = [google_search_tool]
+                kwargs_for_config['tools'].append(google_search_tool)
             elif code_execution_enabled:
-                kwargs_for_config['tools'] = [code_execution_tool]
+                kwargs_for_config['tools'].append(code_execution_tool)
 
         if "gemini-2.5-flash" in model_name:
             kwargs_for_config['thinking_config'] = ThinkingConfig(thinking_budget=THINKING_BUDGET, include_thoughts=INCLUDE_THOUGHTS)
