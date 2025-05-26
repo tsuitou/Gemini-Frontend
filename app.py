@@ -20,7 +20,7 @@ from flask_socketio import SocketIO, emit
 from google import genai
 from google.genai import _transformers as t
 from google.genai import types 
-from google.genai.types import Tool, GenerateContentConfig, GoogleSearch, ToolCodeExecution, ThinkingConfig
+from google.genai.types import Tool, GenerateContentConfig, GoogleSearch, ToolCodeExecution, ThinkingConfig, UrlContext
 from dotenv import load_dotenv
 from pathlib import Path
 from filelock import FileLock
@@ -46,6 +46,10 @@ code_execution_tool = Tool(
 
 google_search_tool = Tool(
     google_search=GoogleSearch()
+)
+
+url_context_tool = Tool(
+    url_context = UrlContext()
 )
 
 MODELS = os.environ.get("MODELS", "").split(",")
@@ -917,11 +921,11 @@ def handle_message(data):
 
         if not image_generation_enabled:
             kwargs_for_config['system_instruction'] = system_instructions
-
+            kwargs_for_config['tools'] = [url_context_tool]
             if grounding_enabled:
-                kwargs_for_config['tools'] = [google_search_tool]
+                kwargs_for_config['tools'].append(google_search_tool)
             elif code_execution_enabled:
-                kwargs_for_config['tools'] = [code_execution_tool]
+                kwargs_for_config['tools'].append(code_execution_tool)
 
         if "gemini-2.5-flash" in model_name:
             kwargs_for_config['thinking_config'] = ThinkingConfig(thinking_budget=THINKING_BUDGET, include_thoughts=INCLUDE_THOUGHTS)
