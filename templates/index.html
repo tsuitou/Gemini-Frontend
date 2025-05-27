@@ -106,26 +106,24 @@
           </div>
         </div>
         
-        <div class="sidebar-section">
-          <div class="sidebar-section-title">
-            <span>ブックマーク</span>
-          </div>
-          <div 
-            v-for="chat in bookmarkedChats" 
-            :key="chat.id" 
-            class="sidebar-item" 
-            :class="{ active: currentChatId === chat.id }"
-            @click="loadChatMobile(chat.id)"
-          >
-            <i class="fas fa-bookmark bookmark-icon"></i>
-            <span class="chat-title-text">{{ chat.title }}</span>
-          </div>
-          <div class="empty-list-message" v-if="bookmarkedChats.length === 0">
-            ブックマークされたチャットはありません
-          </div>
-        </div>
         
         <div class="sidebar-section history-section">
+					<div class="sidebar-section-title">
+						<span>ブックマーク</span>
+					</div>
+					<div 
+						v-for="chat in bookmarkedChats" 
+						:key="chat.id" 
+						class="sidebar-item" 
+						:class="{ active: currentChatId === chat.id }"
+						@click="loadChatMobile(chat.id)"
+					>
+						<i class="fas fa-bookmark bookmark-icon"></i>
+						<span class="chat-title-text">{{ chat.title }}</span>
+					</div>
+					<div class="empty-list-message" v-if="bookmarkedChats.length === 0">
+						ブックマークされたチャットはありません
+					</div>
           <div class="sidebar-section-title">履歴</div>
           <div 
             v-for="chat in filteredHistory" 
