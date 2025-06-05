@@ -181,6 +181,13 @@
                 ></i>
               </button>
 							<button 
+								class="chat-action-btn clone-btn" 
+								@click="cloneChat(currentChatId)"
+								title="チャットを複製"
+							>
+								<i class="fas fa-clone"></i>
+							</button>
+							<button 
 								class="chat-action-btn download-btn" 
 								@click="downloadChat(currentChatId)"
 								title="チャットをダウンロード"

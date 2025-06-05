@@ -1582,7 +1582,34 @@ pre:hover .code-copy-btn {
     align-items: center;
     justify-content: center;
   }
-  
+
+.clone-btn {
+  color: var(--text-light);
+  transition: var(--transition);
+}
+
+.clone-btn:hover {
+  color: var(--warning-color);
+  background-color: var(--bg-gray);
+}
+
+/* クローン進行中のアニメーション（オプション） */
+.clone-btn.cloning {
+  color: var(--warning-color);
+  animation: pulse 1s infinite;
+}
+
+@keyframes clone-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
   /* 画像ビューアーの調整 */
   .image-viewer img {
     max-width: 95%;

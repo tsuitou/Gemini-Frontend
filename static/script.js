@@ -1107,7 +1107,21 @@ createApp({
         return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       }
     };
-    
+		
+		const cloneChat = (chatId) => {
+			if (!chatId || !chatHistory.value[chatId]) {
+				showToastMessage('複製するチャットが見つかりません');
+				return;
+			}
+			
+			socket.emit('clone_chat', { 
+				token: token.value, 
+				chat_id: chatId 
+			});
+			
+			showToastMessage('チャットを複製中...');
+		};
+		
 		// チャットのダウンロード関数
 		const downloadChat = (chatId) => {
 			if (!chatId || !chatHistory.value[chatId] || !currentChat.value) return;
@@ -1813,6 +1827,20 @@ createApp({
       }
     });
     
+		socket.on('chat_cloned', (data) => {
+			if (data.status === 'success') {
+				// 履歴リストを更新
+				getHistoryList();
+				
+				// 新しいチャットに自動的に切り替え
+				loadChat(data.new_chat_id);
+				
+				showToastMessage('チャットを複製しました');
+			} else {
+				showToastMessage('チャットの複製に失敗しました: ' + (data.message || ''));
+			}
+		});
+		
     // エラー処理
     socket.on('error', (data) => {
       showToastMessage('エラー: ' + data.message);
@@ -1925,6 +1953,7 @@ createApp({
 			toggleSidebar,
 			closeSidebar,
 			loadChatMobile,
+			cloneChat,
 			
       // モーダル関連
       showEditTitleModal,

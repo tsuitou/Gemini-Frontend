@@ -1084,6 +1084,62 @@ def handle_resend_message(data):
         # 応答処理終了後にキャンセルフラグを削除
         cancellation_flags.pop(sid, None)
 
+@socketio.on("clone_chat")
+def handle_clone_chat(data):
+    token = data.get("token")
+    username = get_username_from_token(token)
+    if not username:
+        emit("error", {"message": "認証エラー"})
+        return
+    
+    source_chat_id = data.get("chat_id")
+    if not source_chat_id:
+        emit("chat_cloned", {"status": "error", "message": "複製元のチャットIDが指定されていません"})
+        return
+    
+    user_dir = get_user_dir(username)
+    
+    try:
+        # 元のチャット情報を取得
+        past_chats = load_past_chats(user_dir)
+        if source_chat_id not in past_chats:
+            emit("chat_cloned", {"status": "error", "message": "複製元のチャットが見つかりません"})
+            return
+        
+        # 元のメッセージを取得
+        source_messages = load_chat_messages(user_dir, source_chat_id)
+        source_gemini_history = load_gemini_history(user_dir, source_chat_id)
+        
+        # 新しいチャットIDを生成
+        new_chat_id = f"{time.time()}"
+        
+        # 新しいチャットのタイトルを生成（コピー表記を追加）
+        source_title = past_chats[source_chat_id].get("title", "無題のチャット")
+        new_title = f"{source_title} (コピー)"
+        
+        # past_chatsに新しいチャットを追加
+        current_time = time.time()
+        past_chats[new_chat_id] = {
+            "title": new_title,
+            "bookmarked": False,  # コピーはブックマークを引き継がない
+            "lastUpdated": current_time
+        }
+        
+        # ファイルに保存
+        save_past_chats(user_dir, past_chats)
+        save_chat_messages(user_dir, new_chat_id, source_messages)
+        save_gemini_history(user_dir, new_chat_id, source_gemini_history)
+        
+        emit("chat_cloned", {
+            "status": "success", 
+            "new_chat_id": new_chat_id,
+            "new_title": new_title
+        })
+        
+    except Exception as e:
+        print(f"チャット複製エラー: {str(e)}")
+        emit("chat_cloned", {"status": "error", "message": f"複製処理中にエラーが発生しました: {str(e)}"})
+
 @socketio.on("delete_message")
 def handle_delete_message(data):
     token = data.get("token")
